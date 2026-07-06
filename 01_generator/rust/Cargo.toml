@@ -1,0 +1,27 @@
+[workspace]
+members  = ["xtask"]
+resolver = "2"
+
+[workspace.package]
+version = "1.4.2"
+
+[package]
+name    = "generator-plugin"
+version.workspace = true
+edition = "2021"
+
+[lib]
+name       = "generator_plugin"
+crate-type = ["cdylib"]
+path       = "plugin.rs"
+
+[dependencies]
+clap-sys = "0.5"
+
+# A Rust panic trying to unwind through a C stack frame is undefined behaviour
+# and will crash the host. Abort immediately instead.
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

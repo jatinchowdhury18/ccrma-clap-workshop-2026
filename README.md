@@ -4,6 +4,8 @@ Audio synthesis & effect plugins, including synthesizers, filters, delays, phase
 
 In this workshop, participants will learn the fundamentals of audio plugin development and audio DSP through hands-on, real-world examples. Along the way, they will design and build their own audio effect plugins using the CLAP standard, gaining a deep understanding of both the signal processing concepts and how to implement them in practice. CLAP is compatible with popular plugin libraries such as JUCE, and students will be able to apply their skills to any plugin framework they may desire.
 
+## Schedule
+
 The rough schedule for the workshop will be as follows:
 
 | Time            | Mon              | Tue                  | Wed                       | Thu              | Fri                   |
@@ -13,3 +15,17 @@ The rough schedule for the workshop will be as follows:
 | 13:00–14:00     | Lunch            | Lunch                | Lunch                     | Lunch            | Lunch                 |
 | 14:00–16:00     | Lecture: Filters | Lecture: Dynamics    | Individual Projects       | Project Work     | Project Work          |
 | 16:00–17:00     | Exercise 02      | Exercise 04          | Project Work              | Project Work     | Project Presentations |
+
+## Requirements
+
+Participants will be expected to provide their own computer, with support for compiling code in the language of the participant's choice.
+
+Participants will be expected to use a DAW that is capable of hosting CLAP plugins. There are cheap/free options available including:
+- [REAPER](https://www.reaper.fm/)
+- [Bitwig 8-track](https://www.bitwig.com/8-track/)
+
+## Course Materials
+
+Slides for each lecture will be provided in the `slides ` folder.
+
+Starter code is provided, starting with `01_generator`, in C, C++, Rust, and JAI. Reference code will be provided as the workshop progresses.
