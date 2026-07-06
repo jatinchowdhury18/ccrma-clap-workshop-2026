@@ -29,3 +29,5 @@ Participants will be expected to use a DAW that is capable of hosting CLAP plugi
 Slides for each lecture will be provided in the `slides ` folder.
 
 Starter code is provided, starting with `01_generator`, in C, C++, Rust, and JAI. Reference code will be provided as the workshop progresses.
+
+CLAP reference documentation can be found [on GitHub](https://github.com/free-audio/clap).
