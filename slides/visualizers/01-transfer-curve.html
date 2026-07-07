@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>waveshaping — the transfer curve</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" onload="window.__renderMath && window.__renderMath()"></script>
+<style>
+  :root {
+    --ink: #1c2333;
+    --grid: #d7dce5;
+    --muted: #5a6372;
+    --faint: #9aa4b2;
+    --paper: #ffffff;
+    --page: #f2f3f0;
+    --accent: #e4572e;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--mono);
+    overflow: auto;
+  }
+  #stage {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    min-width: 820px;
+    min-height: 540px;
+  }
+  canvas { position: absolute; inset: 0; display: block; }
+
+  #title {
+    position: absolute;
+    left: 30px; top: 12px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    user-select: none;
+  }
+  #title span { color: var(--muted); }
+
+  #nav {
+    position: absolute;
+    top: 12px; right: 30px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    user-select: none;
+  }
+  #nav a { color: var(--muted); text-decoration: none; margin-left: 16px; }
+  #nav a:hover { color: var(--ink); }
+  #nav a.here { color: var(--ink); }
+
+  #controls {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    justify-content: safe center;
+    gap: 12px;
+    padding: 4px 2px;
+    min-width: 0;
+    overflow: hidden auto;
+  }
+  #controls > * { flex-shrink: 0; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  #fns { gap: 6px; }
+
+  #math {
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+    color: var(--ink);
+    padding: 4px 0;
+    overflow: auto hidden;
+  }
+  #math .katex-display { margin: 0; }
+  #math .katex-display > .katex { text-align: left; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    color: var(--muted);
+    background: var(--paper);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    padding: 5px 10px 5px 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    line-height: 1;
+  }
+  .chip .dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--c);
+    opacity: 0.45;
+    flex: none;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--c);
+    box-shadow: inset 0 0 0 1px var(--c);
+  }
+  .chip[aria-pressed="true"] .dot { opacity: 1; }
+  .chip:focus-visible, .wavebtn:focus-visible, input[type=range]:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  #driverow { gap: 10px; }
+  #driverow label { font-size: 13.5px; color: var(--muted); }
+  input[type=range] {
+    flex: 1 1 90px;
+    max-width: 240px;
+    accent-color: var(--accent);
+    height: 18px;
+  }
+  #driveval {
+    font-size: 13.5px;
+    color: var(--ink);
+    min-width: 5.5ch;
+    text-align: right;
+  }
+
+  .wavebtn {
+    background: var(--paper);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    width: 42px; height: 26px;
+    cursor: pointer;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .wavebtn:hover { border-color: var(--muted); }
+  .wavebtn[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--ink);
+  }
+  .wavebtn svg { display: block; }
+
+  #soundbtn[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  #readout {
+    font-size: 14px;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+    white-space: pre;
+  }
+  #eq {
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="title">waveshaping <span>— the transfer curve</span></div>
+  <div id="nav">
+    <a href="01-transfer-curve.html" class="here">01 transfer</a>
+    <a href="02-harmonics.html">02 harmonics</a>
+    <a href="03-imperfection-decomposer.html">03 even/odd</a>
+    <a href="04-aliasing.html">04 aliasing</a>
+  </div>
+  <div id="controls">
+    <div class="row" id="fns"></div>
+    <div id="math" aria-live="polite"></div>
+    <div class="row" id="driverow">
+      <label for="drive">drive</label>
+      <input id="drive" type="range" min="0.05" max="2.5" step="0.01" value="1.5">
+      <span id="driveval">1.50×</span>
+    </div>
+    <div class="row" id="waves"></div>
+    <div class="row">
+      <button id="soundbtn" class="wavebtn" aria-pressed="false" aria-label="sound" title="sound">
+        <svg width="18" height="16" viewBox="0 0 20 16" fill="none" stroke="currentColor"
+          stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 6v4h3l4 3.5v-11L5 6H2z" fill="currentColor" stroke="none"/>
+          <path d="M12.5 5.5a4.2 4.2 0 0 1 0 5"/>
+          <path d="M15.2 3.5a7.5 7.5 0 0 1 0 9"/>
+        </svg>
+      </button>
+    </div>
+    <div id="readout"></div>
+    <div id="eq">y[n] = g( drive · x[n] )</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const INK = "#1c2333", GRID = "#d7dce5", FAINT = "#9aa4b2", MUT = "#5a6372";
+
+const SHAPERS = [
+  { id: "wire",  label: "y = x",      color: "#9aa4b2", f: x => x,
+    tex: "g(x) = x",
+    plain: "g(x) = x" },
+  { id: "hard",  label: "hard clip",  color: "#e4572e", f: x => Math.max(-1, Math.min(1, x)),
+    tex: "g(x) = \\max(-1,\\ \\min(1,\\ x))",
+    plain: "g(x) = max(-1, min(1, x))" },
+  { id: "cubic", label: "cubic",      color: "#f6a600", f: x => x <= -1 ? -2/3 : x >= 1 ? 2/3 : x - x*x*x/3,
+    tex: "g(x) = \\begin{cases} -\\tfrac{2}{3} & x \\le -1 \\\\[2pt] x - \\tfrac{x^{3}}{3} & -1 < x < 1 \\\\[2pt] \\tfrac{2}{3} & x \\ge 1 \\end{cases}",
+    plain: "g(x) = x - x³/3, clamped to ±2/3" },
+  { id: "tanh",  label: "tanh",       color: "#3a7ca5", f: Math.tanh,
+    tex: "g(x) = \\tanh(x)",
+    plain: "g(x) = tanh(x)" },
+  { id: "sig",   label: "x/√(1+x²)", color: "#2a9d8f", f: x => x / Math.sqrt(1 + x*x),
+    tex: "g(x) = \\dfrac{x}{\\sqrt{1 + x^{2}}}",
+    plain: "g(x) = x / √(1 + x²)" },
+  { id: "fold",  label: "fold",       color: "#9b59b6", f: x => Math.sin(Math.PI * 0.5 * x),
+    tex: "g(x) = \\sin\\!\\left(\\tfrac{\\pi}{2}\\,x\\right)",
+    plain: "g(x) = sin(πx/2)" },
+];
+
+const WAVES = [
+  { id: "sine",     f: p => Math.sin(2 * Math.PI * p),
+    icon: "M1 7 Q 7 -4 13 7 Q 19 18 25 7" },
+  { id: "triangle", f: p => 2 / Math.PI * Math.asin(Math.sin(2 * Math.PI * p)),
+    icon: "M1 7 L 7 1 L 19 13 L 25 7" },
+  { id: "saw",      f: p => 2 * (p - Math.floor(p + 0.5)),
+    icon: "M1 10 L 12 3 L 12 10 L 23 3" },
+];
+
+const A = 2.5;        // shared amplitude range of all three panels
+const CYCLES = 2;     // cycles shown in the time window
+const PERIOD = 6000;  // ms for the tracer to cross the window
+
+const state = {
+  shaper: 1,          // hard clip
+  wave: 0,            // sine
+  drive: 1.5,
+  tau: 0.155,         // tracer position in [0,1)
+  paused: false,
+};
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (reducedMotion) { state.paused = true; state.tau = 0.155; }
+
+const stage = document.getElementById("stage");
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const controls = document.getElementById("controls");
+const readout = document.getElementById("readout");
+const driveEl = document.getElementById("drive");
+const driveVal = document.getElementById("driveval");
+
+// ---- controls ----------------------------------------------------------
+
+const fnsEl = document.getElementById("fns");
+SHAPERS.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.className = "chip";
+  b.style.setProperty("--c", s.color);
+  b.setAttribute("aria-pressed", String(i === state.shaper));
+  b.innerHTML = `<span class="dot"></span>${s.label}`;
+  b.addEventListener("click", () => { state.shaper = i; syncControls(); });
+  fnsEl.appendChild(b);
+});
+
+const wavesEl = document.getElementById("waves");
+WAVES.forEach((w, i) => {
+  const b = document.createElement("button");
+  b.className = "wavebtn";
+  b.setAttribute("aria-label", w.id);
+  b.title = w.id;
+  b.setAttribute("aria-pressed", String(i === state.wave));
+  b.innerHTML = `<svg width="26" height="14" viewBox="0 0 26 14" fill="none"
+    stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="${w.icon}"/></svg>`;
+  b.addEventListener("click", () => { state.wave = i; syncControls(); });
+  wavesEl.appendChild(b);
+});
+
+driveEl.addEventListener("input", () => {
+  state.drive = parseFloat(driveEl.value);
+  driveVal.textContent = state.drive.toFixed(2) + "×";
+  updateAudio();
+});
+
+const mathEl = document.getElementById("math");
+function renderMath() {
+  const s = SHAPERS[state.shaper];
+  if (window.katex) {
+    katex.render(s.tex, mathEl, { displayMode: true, throwOnError: false });
+  } else {
+    mathEl.textContent = s.plain;
+  }
+}
+window.__renderMath = renderMath;
+
+function syncControls() {
+  [...fnsEl.children].forEach((b, i) => b.setAttribute("aria-pressed", String(i === state.shaper)));
+  [...wavesEl.children].forEach((b, i) => b.setAttribute("aria-pressed", String(i === state.wave)));
+  document.documentElement.style.setProperty("--accent", SHAPERS[state.shaper].color);
+  renderMath();
+  updateAudio();
+}
+syncControls();
+
+// ---- sound ---------------------------------------------------------------
+// The audio path mirrors the page: oscillator -> WaveShaperNode holding
+// f(drive * x) -> DC blocker -> gain. The node's curve IS the transfer curve.
+
+var audio = null;    // var: hoisted, so the syncControls() call above the
+var soundOn = false; // sound module can safely hit updateAudio's guard
+const soundBtn = document.getElementById("soundbtn");
+
+const oscType = () => WAVES[state.wave].id === "saw" ? "sawtooth" : WAVES[state.wave].id;
+
+function bakeCurve() {
+  const f = SHAPERS[state.shaper].f;
+  const N = 2049;
+  const curve = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const x = -1 + 2 * i / (N - 1);
+    curve[i] = Math.max(-2, Math.min(2, f(state.drive * x)));
+  }
+  return curve;
+}
+
+function updateAudio() {
+  if (!audio || !soundOn) return;
+  audio.shaper.curve = bakeCurve();
+  audio.osc.type = oscType();
+}
+
+function startAudio() {
+  if (!audio) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    osc.frequency.value = 110;
+    const shaper = ctx.createWaveShaper();
+    shaper.oversample = "4x";
+    const dcblock = ctx.createBiquadFilter();
+    dcblock.type = "highpass";
+    dcblock.frequency.value = 8;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    osc.connect(shaper).connect(dcblock).connect(gain).connect(ctx.destination);
+    osc.start();
+    audio = { ctx, osc, shaper, gain };
+  }
+  audio.ctx.resume();
+  audio.osc.type = oscType();
+  audio.shaper.curve = bakeCurve();
+  const t = audio.ctx.currentTime;
+  audio.gain.gain.cancelScheduledValues(t);
+  audio.gain.gain.setTargetAtTime(0.15, t, 0.02);
+}
+
+function stopAudio() {
+  if (!audio) return;
+  const t = audio.ctx.currentTime;
+  audio.gain.gain.cancelScheduledValues(t);
+  audio.gain.gain.setTargetAtTime(0, t, 0.02);
+  setTimeout(() => { if (!soundOn && audio) audio.ctx.suspend(); }, 250);
+}
+
+soundBtn.addEventListener("click", () => {
+  soundOn = !soundOn;
+  soundBtn.setAttribute("aria-pressed", String(soundOn));
+  soundOn ? startAudio() : stopAudio();
+});
+
+// ---- layout ------------------------------------------------------------
+
+let R = null; // panel rects
+
+function layout() {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  cv.style.width = W + "px";
+  cv.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const pad = 30, top = 44, gap = 30;
+  const availH = H - top - pad - gap;
+  const availW = W - 2 * pad - gap;
+  let S = Math.floor(Math.min(0.55 * availH, 0.48 * availW));
+  S = Math.max(250, S);
+
+  R = {
+    curve:  { x: pad, y: top, w: S, h: S },
+    input:  { x: pad, y: top + S + gap, w: S, h: Math.max(110, availH - S) },
+    output: { x: pad + S + gap, y: top, w: Math.max(210, availW - S), h: S },
+  };
+  R.ctrl = { x: R.output.x + 8, y: R.input.y, w: R.output.w - 8, h: R.input.h };
+
+  controls.style.left = R.ctrl.x + "px";
+  controls.style.top = R.ctrl.y + "px";
+  controls.style.width = R.ctrl.w + "px";
+  controls.style.height = R.ctrl.h + "px";
+}
+window.addEventListener("resize", layout);
+layout();
+
+// ---- mapping -----------------------------------------------------------
+
+const ampX = a => R.curve.x + (a + A) / (2 * A) * R.curve.w;        // amplitude -> px x (curve & input)
+const ampY = a => R.curve.y + R.curve.h - (a + A) / (2 * A) * R.curve.h; // amplitude -> px y (curve & output)
+const tY = t => R.input.y + t * R.input.h;                          // time -> px y (input, downward)
+const tX = t => R.output.x + t * R.output.w;                        // time -> px x (output, rightward)
+
+const waveAt = t => WAVES[state.wave].f(t * CYCLES);
+const inAt = t => state.drive * waveAt(t);
+
+// ---- drawing -----------------------------------------------------------
+
+function panelBase(r) {
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+}
+
+function panelFrame(r) {
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+}
+
+function clipTo(r, fn) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.clip();
+  fn();
+  ctx.restore();
+}
+
+function axes(r, vertical, horizontal) {
+  // zero axes only; the accent range lines carry the rest of the story
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (vertical)   { const px = ampX(0); ctx.moveTo(px, r.y); ctx.lineTo(px, r.y + r.h); }
+  if (horizontal) { const py = ampY(0); ctx.moveTo(r.x, py); ctx.lineTo(r.x + r.w, py); }
+  ctx.stroke();
+}
+function curveTicks() {
+  // small ticks at ±1, ±2 on both zero axes of the curve panel
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const a of [-2, -1, 1, 2]) {
+    ctx.moveTo(ampX(a), ampY(0) - 4); ctx.lineTo(ampX(a), ampY(0) + 4);
+    ctx.moveTo(ampX(0) - 4, ampY(a)); ctx.lineTo(ampX(0) + 4, ampY(a));
+  }
+  ctx.stroke();
+}
+
+function label(text, x, y, color = INK, align = "left") {
+  ctx.font = "13px Menlo, Consolas, monospace";
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = "top";
+  ctx.fillText(text, x, y);
+}
+
+function arrowHead(x, y, dx, dy, size, color, alpha) {
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - ux * size - uy * size * 0.5, y - uy * size + ux * size * 0.5);
+  ctx.lineTo(x - ux * size + uy * size * 0.5, y - uy * size - ux * size * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function draw() {
+  const s = SHAPERS[state.shaper];
+  const W = stage.clientWidth, H = stage.clientHeight;
+  ctx.clearRect(0, 0, W, H);
+
+  const rc = R.curve, ri = R.input, ro = R.output;
+
+  // ---- curve panel
+  panelBase(rc);
+  clipTo(rc, () => {
+    axes(rc, true, true);
+    curveTicks();
+
+    // y = x reference
+    ctx.beginPath();
+    ctx.strokeStyle = FAINT;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
+    ctx.moveTo(ampX(-A), ampY(-A));
+    ctx.lineTo(ampX(A), ampY(A));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // the transfer curve: one solid, fixed object
+    const N = 240;
+    ctx.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const x = -A + 2 * A * i / N;
+      const px = ampX(x), py = ampY(s.f(x));
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 2.8;
+    ctx.stroke();
+  });
+  panelFrame(rc);
+  label("g(x)", rc.x + 8, rc.y + 6, INK);
+
+  // ---- input panel
+  panelBase(ri);
+  clipTo(ri, () => {
+    axes(ri, true, false);
+    ctx.beginPath();
+    const N = 600;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const px = ampX(inAt(t)), py = tY(t);
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+  });
+  panelFrame(ri);
+  label("x[n]", ri.x + 8, ri.y + 6, INK);
+  label("t ↓", ri.x + 8, ri.y + ri.h - 18, MUT);
+
+  // ---- output panel
+  panelBase(ro);
+  clipTo(ro, () => {
+    axes(ro, false, true);
+    ctx.beginPath();
+    const N = 600;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const px = tX(t), py = ampY(s.f(inAt(t)));
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+  });
+  panelFrame(ro);
+  label("y[n] = g(x[n])", ro.x + 8, ro.y + 6, INK);
+  label("t →", ro.x + ro.w - 30, ro.y + ro.h - 18, MUT);
+
+  // ---- input range lines: the driven signal's reach at ±drive,
+  // rising from the input panel through the curve panel
+  const xl = ampX(-state.drive), xr = ampX(state.drive);
+  ctx.strokeStyle = s.color;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  ctx.moveTo(xl, rc.y); ctx.lineTo(xl, ri.y + ri.h);
+  ctx.moveTo(xr, rc.y); ctx.lineTo(xr, ri.y + ri.h);
+  ctx.stroke();
+
+  // resulting output range: what comes off the curve, out to the right
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i <= 240; i++) {
+    const y = s.f(-state.drive + 2 * state.drive * i / 240);
+    if (y < lo) lo = y;
+    if (y > hi) hi = y;
+  }
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.4;
+  ctx.beginPath();
+  ctx.moveTo(rc.x, ampY(hi)); ctx.lineTo(ro.x + ro.w, ampY(hi));
+  ctx.moveTo(rc.x, ampY(lo)); ctx.lineTo(ro.x + ro.w, ampY(lo));
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // ---- tracer: input sample -> curve -> output sample
+  const t = state.tau;
+  const xv = inAt(t);
+  const yv = s.f(xv);
+  const ix = ampX(xv), iy = tY(t);       // dot on input trace
+  const cx = ix,       cy = ampY(yv);    // dot on curve
+  const ox = tX(t),    oy = cy;          // dot on output trace
+
+  ctx.save();
+  ctx.globalAlpha = 0.4;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ix, iy);
+  ctx.lineTo(cx, cy);
+  ctx.lineTo(ox, oy);
+  ctx.stroke();
+  ctx.restore();
+  arrowHead(cx, cy + 9, 0, -1, 6, INK, 0.4);
+  arrowHead(ox - 9, oy, 1, 0, 6, INK, 0.4);
+
+  ctx.fillStyle = INK;
+  ctx.beginPath(); ctx.arc(ix, iy, 4, 0, 7); ctx.fill();
+
+  ctx.fillStyle = s.color;
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, 5.5, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(ox, oy, 4.5, 0, 7); ctx.fill();
+
+  const fmt = v => (v < 0 ? "−" : "+") + Math.abs(v).toFixed(2);
+  readout.textContent = `x = ${fmt(xv)}   →   y = ${fmt(yv)}`;
+}
+
+// ---- animation & scrubbing ----------------------------------------------
+
+let last = performance.now();
+function frame(now) {
+  const dt = now - last;
+  last = now;
+  if (!state.paused) state.tau = (state.tau + dt / PERIOD) % 1;
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+let scrubbing = false;
+function scrub(e) {
+  const rect = cv.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  const ri = R.input, ro = R.output;
+  if (px >= ri.x && px <= ri.x + ri.w && py >= ri.y && py <= ri.y + ri.h) {
+    state.tau = Math.min(0.999, Math.max(0, (py - ri.y) / ri.h));
+    return true;
+  }
+  if (px >= ro.x && px <= ro.x + ro.w && py >= ro.y && py <= ro.y + ro.h) {
+    state.tau = Math.min(0.999, Math.max(0, (px - ro.x) / ro.w));
+    return true;
+  }
+  return false;
+}
+cv.addEventListener("pointerdown", e => {
+  if (scrub(e)) {
+    scrubbing = true;
+    state.paused = true;
+    cv.setPointerCapture(e.pointerId);
+  } else {
+    state.paused = !state.paused;
+  }
+});
+cv.addEventListener("pointermove", e => { if (scrubbing) scrub(e); });
+cv.addEventListener("pointerup", () => {
+  scrubbing = false;
+  if (!reducedMotion) state.paused = false;
+});
+window.addEventListener("keydown", e => {
+  if (e.code === "Space" && !/^(INPUT|BUTTON)$/.test(e.target.tagName)) {
+    e.preventDefault();
+    state.paused = !state.paused;
+  }
+});
+</script>
+</body>
+</html>

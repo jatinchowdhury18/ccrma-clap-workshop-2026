@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>digital audio — sampling &amp; aliasing</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" onload="window.__renderMath && window.__renderMath()"></script>
+<style>
+  :root {
+    --ink: #1c2333;
+    --grid: #d7dce5;
+    --muted: #5a6372;
+    --faint: #9aa4b2;
+    --paper: #ffffff;
+    --page: #f2f3f0;
+    --accent: #e4572e;
+    --alias: #d81159;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--mono);
+    overflow: auto;
+  }
+  #stage {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    min-width: 780px;
+    min-height: 560px;
+  }
+  canvas { position: absolute; inset: 0; display: block; }
+
+  #title {
+    position: absolute;
+    left: 30px; top: 12px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    user-select: none;
+  }
+  #title span { color: var(--muted); }
+
+  #nav {
+    position: absolute;
+    top: 12px; right: 30px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    user-select: none;
+  }
+  #nav a { color: var(--muted); text-decoration: none; margin-left: 16px; }
+  #nav a:hover { color: var(--ink); }
+  #nav a.here { color: var(--ink); }
+
+  #controls {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    justify-content: safe center;
+    gap: 10px;
+    padding: 4px 2px;
+    min-width: 0;
+    overflow: hidden auto;
+  }
+  #controls > * { flex-shrink: 0; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  #stages { gap: 6px; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    color: var(--muted);
+    background: var(--paper);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    padding: 5px 10px 5px 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    line-height: 1;
+  }
+  .chip .dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--c);
+    opacity: 0.45;
+    flex: none;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--c);
+    box-shadow: inset 0 0 0 1px var(--c);
+  }
+  .chip[aria-pressed="true"] .dot { opacity: 1; }
+  .chip:focus-visible, .iconbtn:focus-visible, input[type=range]:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  #math {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+    color: var(--ink);
+    padding: 4px 0;
+    overflow: auto hidden;
+  }
+  #math .katex-display { margin: 0; }
+  #math .katex-display > .katex { text-align: left; }
+
+  .sliderrow { gap: 10px; flex-wrap: nowrap; }
+  .sliderrow label { font-size: 13.5px; color: var(--muted); min-width: 3ch; }
+  input[type=range] {
+    flex: 1 1 80px;
+    max-width: 220px;
+    accent-color: var(--accent);
+    height: 18px;
+  }
+  .val {
+    font-size: 13.5px;
+    color: var(--ink);
+    min-width: 8ch;
+    text-align: right;
+  }
+  .val.over { color: var(--alias); }
+
+  .iconbtn {
+    background: var(--paper);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    width: 42px; height: 26px;
+    cursor: pointer;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .iconbtn:hover { border-color: var(--muted); }
+  .iconbtn[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .iconbtn svg { display: block; }
+
+  #readout {
+    font-size: 13px;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+  #eq {
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+    line-height: 1.7;
+  }
+  #eq a { color: var(--muted); }
+  #eq a:hover { color: var(--ink); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="title">digital audio <span>— sampling &amp; aliasing</span></div>
+  <div id="nav">
+    <a href="01-sampling.html" class="here">01 sampling</a>
+    <a href="02-building-blocks.html">02 sinusoids</a>
+  </div>
+  <div id="controls">
+    <div class="row" id="stages"></div>
+    <div id="math" aria-live="polite"></div>
+    <div class="row sliderrow">
+      <label for="f">f</label>
+      <input id="f" type="range" min="0" max="1" step="0.001" value="0.402">
+      <span class="val" id="fval">220 Hz</span>
+    </div>
+    <div class="row sliderrow">
+      <label for="fs">fs</label>
+      <input id="fs" type="range" min="0" max="1" step="0.001" value="0.602">
+      <span class="val" id="fsval">1.60 kHz</span>
+    </div>
+    <div class="row">
+      <button id="sweepbtn" class="iconbtn" aria-pressed="false" aria-label="sweep" title="sweep">
+        <svg width="20" height="14" viewBox="0 0 20 14" fill="none" stroke="currentColor"
+          stroke-width="1.6" stroke-linecap="round">
+          <path d="M1 7 Q 3 1 5 7 Q 6.5 11.5 8 7 Q 9 4 10.5 7 Q 11.5 9.5 13 7 Q 13.8 5.2 15 7 Q 15.8 8.6 17 7 Q 17.6 6.2 19 7"/>
+        </svg>
+      </button>
+      <button id="soundbtn" class="iconbtn" aria-pressed="false" aria-label="sound" title="sound" style="margin-left:6px;">
+        <svg width="18" height="16" viewBox="0 0 20 16" fill="none" stroke="currentColor"
+          stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 6v4h3l4 3.5v-11L5 6H2z" fill="currentColor" stroke="none"/>
+          <path d="M12.5 5.5a4.2 4.2 0 0 1 0 5"/>
+          <path d="M15.2 3.5a7.5 7.5 0 0 1 0 9"/>
+        </svg>
+      </button>
+    </div>
+    <div id="readout"></div>
+    <div id="eq"><a href="../../waveshaping/visualizers/04-aliasing.html">waveshaping → 04 aliasing</a></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const INK = "#1c2333", GRID = "#d7dce5", FAINT = "#9aa4b2", MUT = "#5a6372", TINT = "#f2f4f8";
+const ACC = "#e4572e", ALIAS = "#d81159";
+
+const STAGES = [
+  { id: "signal",  label: "signal",    color: INK,
+    tex: "x(t) = \\sin(2\\pi f t)",
+    plain: "x(t) = sin(2πft)" },
+  { id: "samples", label: "+ samples", color: ACC,
+    tex: "x[n] = x\\!\\left(\\tfrac{n}{f_s}\\right) = \\sin\\!\\left(2\\pi f\\,\\tfrac{n}{f_s}\\right)",
+    plain: "x[n] = x(n/fs) = sin(2πf·n/fs)" },
+  { id: "dots",    label: "dots only", color: ACC,
+    tex: "x[n] \\in [-1,\\,1], \\quad n = 0, 1, 2, \\dots",
+    plain: "x[n] ∈ [−1, 1],  n = 0, 1, 2, …" },
+  { id: "alias",   label: "alias fit", color: ALIAS,
+    tex: "f_{\\text{alias}} \\;=\\; \\bigl|\\, f \\,-\\, f_s \\cdot \\mathrm{round}(f / f_s) \\,\\bigr|",
+    plain: "f_alias = | f − fs·round(f/fs) |" },
+];
+
+const T_WIN = 0.020;                 // seconds shown in the time panel
+const AMP = 1.25;                    // amplitude range of the time panel
+const F_MIN = 50, F_MAX = 2000;      // signal frequency slider, log-mapped
+const FS_MIN = 400, FS_MAX = 4000;   // toy sample rate slider, log-mapped
+const SWEEP_LEG_S = 8;
+
+const state = {
+  stage: 1,        // 0 signal | 1 +samples | 2 dots only | 3 alias fit
+  f: 220,          // signal frequency, Hz
+  fs: 1600,        // toy sample rate, Hz — slow enough that the dots are visible
+  sweeping: false,
+};
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// the sampled dots are ambiguous: f and f − m·fs land on the same samples.
+// the SIGNED fold keeps the drawn curve through the dots; |·| is the pitch.
+const fSigned = () => state.f - state.fs * Math.round(state.f / state.fs);
+const fAlias = () => Math.abs(fSigned());
+const aliased = () => state.f > state.fs / 2 + 1e-9;
+const foldOf = f => Math.abs(f - state.fs * Math.round(f / state.fs));
+
+const vToF = v => F_MIN * Math.pow(F_MAX / F_MIN, v);
+const fToV = f => Math.log(f / F_MIN) / Math.log(F_MAX / F_MIN);
+const vToFs = v => FS_MIN * Math.pow(FS_MAX / FS_MIN, v);
+const fsToV = f => Math.log(f / FS_MIN) / Math.log(FS_MAX / FS_MIN);
+const fmtF = f => f >= 1000 ? (f / 1000).toFixed(2) + " kHz" : Math.round(f) + " Hz";
+const fmtK = f => (f / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+const fmtS = v => (v < 0 ? "−" : "+") + Math.abs(v).toFixed(2);
+
+const stage = document.getElementById("stage");
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const controls = document.getElementById("controls");
+const readout = document.getElementById("readout");
+const fEl = document.getElementById("f");
+const fVal = document.getElementById("fval");
+const fsEl = document.getElementById("fs");
+const fsVal = document.getElementById("fsval");
+const sweepBtn = document.getElementById("sweepbtn");
+
+// ---- controls ----------------------------------------------------------
+
+const stagesEl = document.getElementById("stages");
+STAGES.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.className = "chip";
+  b.style.setProperty("--c", s.color);
+  b.setAttribute("aria-pressed", String(i === state.stage));
+  b.innerHTML = `<span class="dot"></span>${s.label}`;
+  b.addEventListener("click", () => { state.stage = i; syncControls(); });
+  stagesEl.appendChild(b);
+});
+
+fEl.addEventListener("pointerdown", () => stopSweep());
+fEl.addEventListener("input", () => {
+  stopSweep();
+  setF(vToF(parseFloat(fEl.value)));
+});
+fsEl.addEventListener("input", () => {
+  setFs(vToFs(parseFloat(fsEl.value)));
+});
+
+function setF(f) {
+  state.f = Math.min(F_MAX, Math.max(F_MIN, f));
+  fEl.value = fToV(state.f);
+  updateValues();
+  updateAudioFreq();
+}
+function setFs(f) {
+  state.fs = Math.min(FS_MAX, Math.max(FS_MIN, f));
+  fsEl.value = fsToV(state.fs);
+  updateValues();
+  updateAudioFreq();
+}
+
+function updateValues() {
+  fVal.textContent = fmtF(state.f);
+  fVal.classList.toggle("over", aliased());
+  fsVal.textContent = fmtF(state.fs);
+  updateReadout();
+}
+
+function updateReadout() {
+  if (state.stage === 0) {
+    readout.textContent = "";
+    return;
+  }
+  const vals = [];
+  for (let n = 0; n < 8; n++) vals.push(fmtS(Math.sin(2 * Math.PI * state.f * n / state.fs)));
+  readout.textContent = `x[0..7] = [ ${vals.join(" ")} ]`;
+}
+
+const mathEl = document.getElementById("math");
+function renderMath() {
+  const s = STAGES[state.stage];
+  if (window.katex) katex.render(s.tex, mathEl, { displayMode: true, throwOnError: false });
+  else mathEl.textContent = s.plain;
+}
+window.__renderMath = renderMath;
+
+function syncControls() {
+  [...stagesEl.children].forEach((b, i) => b.setAttribute("aria-pressed", String(i === state.stage)));
+  updateValues();
+  renderMath();
+}
+syncControls();
+
+// ---- layout ------------------------------------------------------------
+
+let R = null;
+
+function layout() {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  cv.style.width = W + "px";
+  cv.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const pad = 30, top = 44, gap = 28;
+  const availH = H - top - pad - gap;
+  const availW = W - 2 * pad - gap;
+  const timeH = Math.max(260, Math.floor(0.54 * availH));
+  const freqW = Math.max(340, Math.floor(0.52 * availW));
+
+  R = {
+    time: { x: pad, y: top, w: W - 2 * pad, h: timeH },
+    freq: { x: pad, y: top + timeH + gap, w: freqW, h: Math.max(150, availH - timeH) },
+  };
+  R.ctrl = { x: R.freq.x + freqW + gap, y: R.freq.y, w: W - pad - (pad + freqW + gap), h: R.freq.h };
+
+  // time panel plot metrics: small x inset so the n=0 dot isn't on the frame
+  R.tx0 = R.time.x + 12;
+  R.tw = R.time.w - 24;
+  // frequency strip plot metrics
+  R.fx0 = R.freq.x + 14;
+  R.fw = R.freq.w - 28;
+
+  controls.style.left = R.ctrl.x + "px";
+  controls.style.top = R.ctrl.y + "px";
+  controls.style.width = R.ctrl.w + "px";
+  controls.style.height = R.ctrl.h + "px";
+}
+window.addEventListener("resize", layout);
+layout();
+
+// ---- mapping -----------------------------------------------------------
+
+const tPx = t => R.tx0 + t / T_WIN * R.tw;
+const ampY = a => R.time.y + R.time.h / 2 - a / AMP * (R.time.h / 2 - 10);
+const freqX = f => R.fx0 + f / state.fs * R.fw;
+
+// ---- drawing helpers -----------------------------------------------------
+
+function panelBase(r) { ctx.fillStyle = "#ffffff"; ctx.fillRect(r.x, r.y, r.w, r.h); }
+function panelFrame(r) {
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.2;
+  ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+}
+function clipTo(r, fn) {
+  ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip(); fn(); ctx.restore();
+}
+function label(text, x, y, color = INK, align = "left") {
+  ctx.font = "13px Menlo, Consolas, monospace";
+  ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "top";
+  ctx.fillText(text, x, y);
+}
+function arrowHead(x, y, dx, dy, size, color, alpha) {
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - ux * size - uy * size * 0.5, y - uy * size + ux * size * 0.5);
+  ctx.lineTo(x - ux * size + uy * size * 0.5, y - uy * size - ux * size * 0.5);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function sine(f, color, width, dash, alpha) {
+  const N = 600;
+  ctx.save();
+  if (alpha !== undefined) ctx.globalAlpha = alpha;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const t = i / N * T_WIN;
+    const px = tPx(t), py = ampY(Math.sin(2 * Math.PI * f * t));
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  }
+  ctx.strokeStyle = color; ctx.lineWidth = width;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ---- time panel ----------------------------------------------------------
+
+let hover = null;      // pointer pos in canvas coords
+let hoverN = null;     // nearest sample index, resolved each draw
+
+function drawTime() {
+  const r = R.time;
+  const st = state.stage;
+  const nMax = Math.floor(T_WIN * state.fs);
+
+  panelBase(r);
+  clipTo(r, () => {
+    // zero axis
+    ctx.strokeStyle = INK; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(r.x, ampY(0)); ctx.lineTo(r.x + r.w, ampY(0));
+    ctx.stroke();
+
+    // the continuous signal, per stage
+    if (st === 0) sine(state.f, INK, 1.8);
+    if (st === 1) sine(state.f, FAINT, 1.6);
+    if (st === 3) {
+      sine(state.f, FAINT, 1.4, [4, 4]);
+      if (aliased()) {
+        // SIGNED fold: sin(2πf·n/fs) = sin(2π(f − m·fs)·n/fs), so this curve
+        // passes through every dot exactly. |fSigned| would miss them.
+        sine(fSigned(), ALIAS, 2.4);
+      } else {
+        sine(state.f, ACC, 2.2);
+      }
+    }
+
+    // stems + dots: what the computer keeps
+    if (st >= 1) {
+      ctx.strokeStyle = ACC; ctx.lineWidth = 1; ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      for (let n = 0; n <= nMax; n++) {
+        const px = tPx(n / state.fs);
+        ctx.moveTo(px, ampY(0));
+        ctx.lineTo(px, ampY(Math.sin(2 * Math.PI * state.f * n / state.fs)));
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = ACC;
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5;
+      for (let n = 0; n <= nMax; n++) {
+        const px = tPx(n / state.fs);
+        const py = ampY(Math.sin(2 * Math.PI * state.f * n / state.fs));
+        const rr = n === hoverN ? 5.5 : 4;
+        ctx.beginPath(); ctx.arc(px, py, rr, 0, 7); ctx.fill(); ctx.stroke();
+      }
+    }
+  });
+  panelFrame(r);
+
+  label(st === 0 ? "x(t)" : "x[n]", r.x + 8, r.y + 6, INK);
+  label("t →  (20 ms window)", r.x + r.w - 10, r.y + r.h - 20, MUT, "right");
+
+  // top-right readout: hovered sample wins; otherwise the alias-fit verdict
+  if (hoverN !== null && st >= 1) {
+    const t = hoverN / state.fs;
+    const x = Math.sin(2 * Math.PI * state.f * t);
+    label(`n=${hoverN}  t=${(t * 1000).toFixed(1)}ms  x[n]=${fmtS(x)}`,
+      r.x + r.w - 10, r.y + 8, INK, "right");
+  } else if (st === 3 && aliased()) {
+    label(`also fits: ${fmtF(fAlias())}`, r.x + r.w - 10, r.y + 8, ALIAS, "right");
+  }
+}
+
+// ---- frequency strip -------------------------------------------------------
+
+let sweepDir = 0;
+
+function stripMetrics() {
+  const r = R.freq;
+  return { r, py0: r.y + 26, baseY: r.y + r.h - 30, yTop: r.y + r.h - 30 - 34 };
+}
+
+function drawStrip() {
+  const m = stripMetrics();
+  const { r, py0, baseY, yTop } = m;
+  const wallX = freqX(state.fs / 2);
+  const rightX = R.fx0 + R.fw;
+
+  panelBase(r);
+  clipTo(r, () => {
+    // the zone above Nyquist
+    ctx.fillStyle = TINT;
+    ctx.fillRect(wallX, py0, rightX - wallX, baseY - py0);
+
+    // baseline + ticks
+    ctx.strokeStyle = INK; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(R.fx0, baseY + 0.5); ctx.lineTo(rightX, baseY + 0.5);
+    for (const f of [0, state.fs / 2, state.fs]) {
+      ctx.moveTo(freqX(f), baseY); ctx.lineTo(freqX(f), baseY + 5);
+    }
+    ctx.stroke();
+    ctx.font = "12px Menlo, Consolas, monospace";
+    ctx.fillStyle = MUT; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText("0", R.fx0, baseY + 8);
+    ctx.fillText(fmtK(state.fs / 2), wallX, baseY + 8);
+    ctx.fillText(fmtK(state.fs), rightX, baseY + 8);
+
+    // the Nyquist wall
+    ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(wallX, py0); ctx.lineTo(wallX, baseY); ctx.stroke();
+    label("fs/2", wallX + 6, py0 + 2, INK);
+
+    // true-frequency marker; ghost style once it crosses the wall
+    const xT = freqX(Math.min(state.f, state.fs));
+    ctx.save();
+    if (aliased()) { ctx.globalAlpha = 0.35; ctx.setLineDash([3, 3]); }
+    ctx.strokeStyle = ACC; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(xT, baseY); ctx.lineTo(xT, yTop + 4); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(xT, yTop, 4, 0, 7);
+    if (aliased()) { ctx.lineWidth = 1.6; ctx.stroke(); }
+    else { ctx.fillStyle = ACC; ctx.fill(); }
+    ctx.restore();
+    label("f", xT - 3, yTop - 18, ACC);
+    if (state.f > state.fs) {
+      label("↩" + Math.round(state.f / state.fs), xT + 8, yTop - 18, MUT);
+    }
+    if (sweepDir !== 0) arrowHead(xT + sweepDir * 10, yTop, sweepDir, 0, 5, ACC, 0.85);
+
+    // alias marker + the reflection over the wall
+    if (aliased()) {
+      const xA = freqX(fAlias());
+      ctx.strokeStyle = ALIAS; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(xA, baseY); ctx.lineTo(xA, yTop + 4); ctx.stroke();
+      ctx.fillStyle = ALIAS;
+      ctx.beginPath(); ctx.arc(xA, yTop, 4, 0, 7); ctx.fill();
+      label(fmtF(fAlias()), xA - 3, yTop - 18, ALIAS);
+
+      const my = yTop - 24;
+      ctx.strokeStyle = FAINT; ctx.globalAlpha = 0.7; ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(xT, yTop - 4);
+      ctx.quadraticCurveTo((xT + xA) / 2, my, xA, yTop - 4);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      arrowHead(xA + 3, yTop - 7, -0.7, 0.7, 5, FAINT, 0.7);
+
+      if (sweepDir !== 0) {
+        const dA = Math.sign(foldOf(state.f + sweepDir) - fAlias()) || -sweepDir;
+        arrowHead(xA + dA * 10, yTop, dA, 0, 5, ALIAS, 0.85);
+      }
+    }
+  });
+  panelFrame(r);
+  label("frequency", r.x + 8, r.y + 6, INK);
+}
+
+// ---- hover & strip drag -----------------------------------------------------
+
+let dragF = false;
+
+function resolveHover() {
+  hoverN = null;
+  let cursor = "";
+  if (hover) {
+    const rt = R.time;
+    if (state.stage >= 1 &&
+        hover.x >= rt.x && hover.x <= rt.x + rt.w && hover.y >= rt.y && hover.y <= rt.y + rt.h) {
+      const n = Math.round((hover.x - R.tx0) / R.tw * T_WIN * state.fs);
+      if (n >= 0 && n <= Math.floor(T_WIN * state.fs)) {
+        const px = tPx(n / state.fs);
+        const py = ampY(Math.sin(2 * Math.PI * state.f * n / state.fs));
+        if (Math.hypot(hover.x - px, hover.y - py) <= 10) hoverN = n;
+      }
+    }
+    const m = stripMetrics();
+    if (hover.y >= m.py0 - 6 && hover.y <= m.baseY + 8 &&
+        hover.x >= R.fx0 - 6 && hover.x <= R.fx0 + R.fw + 6) {
+      const xT = freqX(Math.min(state.f, state.fs));
+      if (dragF) cursor = "grabbing";
+      else if (Math.abs(hover.x - xT) < 14) cursor = "grab";
+    }
+  }
+  cv.style.cursor = cursor;
+}
+
+function stripPick(e) {
+  const rect = cv.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  const m = stripMetrics();
+  if (py < m.py0 - 6 || py > m.baseY + 8 || px < R.fx0 - 6 || px > R.fx0 + R.fw + 6) return null;
+  return (px - R.fx0) / R.fw * state.fs;
+}
+
+cv.addEventListener("pointermove", e => {
+  const rect = cv.getBoundingClientRect();
+  hover = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  if (dragF) {
+    const f = stripPick(e);
+    if (f !== null) setF(f);
+  }
+});
+cv.addEventListener("pointerleave", () => { hover = null; hoverN = null; });
+cv.addEventListener("pointerdown", e => {
+  const f = stripPick(e);
+  if (f !== null) {
+    stopSweep();
+    dragF = true;
+    cv.setPointerCapture(e.pointerId);
+    setF(f);
+  }
+});
+cv.addEventListener("pointerup", () => { dragF = false; });
+
+window.addEventListener("keydown", e => {
+  if (/^(INPUT|BUTTON)$/.test(e.target.tagName)) return;
+  const i = "1234".indexOf(e.key);
+  if (i >= 0) { state.stage = i; syncControls(); }
+  if (e.code === "Space") { e.preventDefault(); sweepBtn.click(); }
+});
+
+// ---- sweep -------------------------------------------------------------------
+
+let sweep = null; // {t0, v0, v1, dur}
+
+function startLeg(v0, v1) {
+  let dur = SWEEP_LEG_S * 1000 * Math.abs(v1 - v0);
+  if (dur < 60) { v0 = v1; v1 = v1 >= 0.999 ? 0 : 1; dur = SWEEP_LEG_S * 1000; }
+  sweep = { t0: performance.now(), v0, v1, dur };
+  sweepDir = Math.sign(v1 - v0);
+}
+
+function stepSweep() {
+  const u = Math.min(1, (performance.now() - sweep.t0) / sweep.dur);
+  setF(vToF(sweep.v0 + (sweep.v1 - sweep.v0) * u));
+  if (u >= 1) startLeg(sweep.v1, sweep.v1 >= 0.999 ? 0 : 1);
+}
+
+function stopSweep() {
+  if (!state.sweeping) return;
+  state.sweeping = false;
+  sweep = null;
+  sweepDir = 0;
+  sweepBtn.setAttribute("aria-pressed", "false");
+}
+
+sweepBtn.addEventListener("click", () => {
+  if (state.sweeping) stopSweep();
+  else {
+    state.sweeping = true;
+    sweepBtn.setAttribute("aria-pressed", "true");
+    const v = fToV(state.f);
+    startLeg(v, v >= 0.999 ? 0 : 1);
+  }
+});
+
+// ---- main loop -----------------------------------------------------------------
+
+function frame() {
+  if (state.sweeping && sweep) stepSweep();
+  resolveHover();
+  ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
+  drawTime();
+  drawStrip();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---- sound ---------------------------------------------------------------
+// The oscillator always plays the FOLDED frequency: the browser can't actually
+// run at fs = 1.6 kHz, so we synthesize what that computer would output. The
+// fold map |f − fs·round(f/fs)| is continuous in f and fs, so per-change
+// setTargetAtTime updates are glitch-free, including across the wall.
+
+var audio = null;
+var soundOn = false;
+const soundBtn = document.getElementById("soundbtn");
+
+const fEff = () => Math.max(1, aliased() ? fAlias() : state.f);
+
+function updateAudioFreq() {
+  if (!audio || !soundOn) return;
+  audio.osc.frequency.setTargetAtTime(fEff(), audio.ctx.currentTime, 0.02);
+}
+
+function startAudio() {
+  if (!audio) {
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = actx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = fEff();
+    const dcblock = actx.createBiquadFilter();
+    dcblock.type = "highpass";
+    dcblock.frequency.value = 8;
+    const gain = actx.createGain();
+    gain.gain.value = 0;
+    osc.connect(dcblock).connect(gain).connect(actx.destination);
+    osc.start();
+    audio = { ctx: actx, osc, gain };
+  }
+  audio.ctx.resume();
+  const t = audio.ctx.currentTime;
+  audio.osc.frequency.setValueAtTime(fEff(), t);
+  audio.gain.gain.cancelScheduledValues(t);
+  audio.gain.gain.setTargetAtTime(0.15, t, 0.02);
+}
+
+function stopAudio() {
+  if (!audio) return;
+  const t = audio.ctx.currentTime;
+  audio.gain.gain.cancelScheduledValues(t);
+  audio.gain.gain.setTargetAtTime(0, t, 0.02);
+  setTimeout(() => { if (!soundOn && audio) audio.ctx.suspend(); }, 250);
+}
+
+soundBtn.addEventListener("click", () => {
+  soundOn = !soundOn;
+  soundBtn.setAttribute("aria-pressed", String(soundOn));
+  soundOn ? startAudio() : stopAudio();
+});
+</script>
+</body>
+</html>

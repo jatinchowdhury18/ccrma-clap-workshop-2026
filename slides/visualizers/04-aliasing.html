@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>waveshaping — aliasing</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" onload="window.__renderMath && window.__renderMath()"></script>
+<style>
+  :root {
+    --ink: #1c2333;
+    --grid: #d7dce5;
+    --muted: #5a6372;
+    --faint: #9aa4b2;
+    --paper: #ffffff;
+    --page: #f2f3f0;
+    --accent: #e4572e;
+    --alias: #d81159;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--mono);
+    overflow: auto;
+  }
+  #stage {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    min-width: 780px;
+    min-height: 560px;
+  }
+  canvas { position: absolute; inset: 0; display: block; }
+
+  #title {
+    position: absolute;
+    left: 30px; top: 12px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    user-select: none;
+  }
+  #title span { color: var(--muted); }
+
+  #nav {
+    position: absolute;
+    top: 12px; right: 30px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    user-select: none;
+  }
+  #nav a { color: var(--muted); text-decoration: none; margin-left: 16px; }
+  #nav a:hover { color: var(--ink); }
+  #nav a.here { color: var(--ink); }
+
+  #controls {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    justify-content: safe center;
+    gap: 12px;
+    padding: 4px 2px;
+    min-width: 0;
+    overflow: hidden auto;
+  }
+  #controls > * { flex-shrink: 0; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  #fns { gap: 6px; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    color: var(--muted);
+    background: var(--paper);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    padding: 5px 10px 5px 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    line-height: 1;
+  }
+  .chip .dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--c);
+    opacity: 0.45;
+    flex: none;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--c);
+    box-shadow: inset 0 0 0 1px var(--c);
+  }
+  .chip[aria-pressed="true"] .dot { opacity: 1; }
+  .chip:focus-visible, .iconbtn:focus-visible, input[type=range]:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  #math {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+    color: var(--ink);
+    padding: 4px 0;
+    overflow: auto hidden;
+  }
+  #math .katex-display { margin: 0; }
+  #math .katex-display > .katex { text-align: left; }
+
+  .sliderrow { gap: 10px; flex-wrap: nowrap; }
+  .sliderrow label { font-size: 13.5px; color: var(--muted); min-width: 5ch; }
+  input[type=range] {
+    flex: 1 1 80px;
+    max-width: 220px;
+    accent-color: var(--accent);
+    height: 18px;
+  }
+  .val {
+    font-size: 13.5px;
+    color: var(--ink);
+    min-width: 8ch;
+    text-align: right;
+  }
+
+  .iconbtn {
+    background: var(--paper);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    width: 42px; height: 26px;
+    cursor: pointer;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .iconbtn:hover { border-color: var(--muted); }
+  .iconbtn[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .iconbtn svg { display: block; }
+
+  #eq {
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+    line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="title">waveshaping <span>— aliasing</span></div>
+  <div id="nav">
+    <a href="01-transfer-curve.html">01 transfer</a>
+    <a href="02-harmonics.html">02 harmonics</a>
+    <a href="03-imperfection-decomposer.html">03 even/odd</a>
+    <a href="04-aliasing.html" class="here">04 aliasing</a>
+  </div>
+  <div id="controls">
+    <div class="row" id="fns"></div>
+    <div id="math" aria-live="polite"></div>
+    <div class="row sliderrow">
+      <label for="drive">drive</label>
+      <input id="drive" type="range" min="0" max="1" step="0.001" value="0.447">
+      <span class="val" id="driveval">1.50×</span>
+    </div>
+    <div class="row sliderrow">
+      <label for="f0">f₀</label>
+      <input id="f0" type="range" min="0" max="1" step="0.001" value="0.687">
+      <span class="val" id="f0val">2.70 kHz</span>
+    </div>
+    <div class="row">
+      <button id="sweepbtn" class="iconbtn" aria-pressed="false" aria-label="sweep" title="sweep">
+        <svg width="20" height="14" viewBox="0 0 20 14" fill="none" stroke="currentColor"
+          stroke-width="1.6" stroke-linecap="round">
+          <path d="M1 7 Q 3 1 5 7 Q 6.5 11.5 8 7 Q 9 4 10.5 7 Q 11.5 9.5 13 7 Q 13.8 5.2 15 7 Q 15.8 8.6 17 7 Q 17.6 6.2 19 7"/>
+        </svg>
+      </button>
+      <span id="oschips" style="display:inline-flex; gap:6px; margin-left:6px;"></span>
+      <button id="revealbtn" class="chip" aria-pressed="false" title="highlight aliases"
+        style="--c: #d81159; margin-left:6px;"><span class="dot"></span>aliases</button>
+      <button id="soundbtn" class="iconbtn" aria-pressed="false" aria-label="sound" title="sound" style="margin-left:6px;">
+        <svg width="18" height="16" viewBox="0 0 20 16" fill="none" stroke="currentColor"
+          stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 6v4h3l4 3.5v-11L5 6H2z" fill="currentColor" stroke="none"/>
+          <path d="M12.5 5.5a4.2 4.2 0 0 1 0 5"/>
+          <path d="M15.2 3.5a7.5 7.5 0 0 1 0 9"/>
+        </svg>
+      </button>
+    </div>
+    <div id="eq">y[n] = g( drive · sin(2π·f₀·n / fs) )<br>hold the hinge at fs/2 (or key f) to fold the paper</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const INK = "#1c2333", GRID = "#d7dce5", FAINT = "#9aa4b2", MUT = "#5a6372", TINT = "#f2f4f8";
+const ALIAS = "#d81159";
+
+const SHAPERS = [
+  { id: "wire",  label: "y = x",      color: "#9aa4b2", f: x => x },
+  { id: "hard",  label: "hard clip",  color: "#e4572e", f: x => Math.max(-1, Math.min(1, x)) },
+  { id: "cubic", label: "cubic",      color: "#f6a600", f: x => x <= -1 ? -2/3 : x >= 1 ? 2/3 : x - x*x*x/3 },
+  { id: "tanh",  label: "tanh",       color: "#3a7ca5", f: Math.tanh },
+  { id: "sig",   label: "x/√(1+x²)", color: "#2a9d8f", f: x => x / Math.sqrt(1 + x*x) },
+  { id: "fold",  label: "fold",       color: "#9b59b6", f: x => Math.sin(Math.PI * 0.5 * x) },
+];
+
+const FOLD_TEX = "f_{\\text{alias}} \\;=\\; \\bigl|\\, k f_0 \\,-\\, f_s \\cdot \\mathrm{round}(k f_0 / f_s) \\,\\bigr|";
+const FOLD_PLAIN = "f_alias = | k·f0 − fs·round(k·f0 / fs) |";
+
+const A = 2.5;                 // thumbnail amplitude range
+const K = 256;                 // harmonics tracked
+const DB_TOP = 6, DB_FLOOR = -90;
+const F_MIN = 250, F_OCT = 5;  // f0 = 250 · 2^(5v)
+const DRIVE_MIN = 0.05, DRIVE_MAX = 100;  // drive slider, log-mapped like f0
+const SWEEP_LEG_S = 8;
+const OS_MAP = { 1: "none", 2: "2x", 4: "4x" };
+
+let fs = 48000;
+
+const state = {
+  shaper: 1,        // hard clip
+  drive: 1.5,
+  f0: 2700,         // deliberately NOT a divisor of fs: aliases land off-grid
+  os: 1,            // oversample factor: 1 | 2 | 4
+  reveal: false,    // false: aliases blend into the spectrum; true: crimson
+  sweeping: false,
+  fold: 0,          // fold-the-paper progress 0..1 (theta = fold·π)
+};
+let foldHeld = false;
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const stage = document.getElementById("stage");
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const controls = document.getElementById("controls");
+const driveEl = document.getElementById("drive");
+const driveVal = document.getElementById("driveval");
+const f0El = document.getElementById("f0");
+const f0Val = document.getElementById("f0val");
+const sweepBtn = document.getElementById("sweepbtn");
+
+let dirty = true;
+let hotUntil = 0;
+let paramTick = false;   // a param changed this frame (reduced-motion spectrogram stepping)
+function markHot() { hotUntil = performance.now() + 1200; paramTick = true; }
+
+const vToF = v => F_MIN * Math.pow(2, F_OCT * v);
+const fToV = f => Math.log2(f / F_MIN) / F_OCT;
+const vToDrive = v => DRIVE_MIN * Math.pow(DRIVE_MAX / DRIVE_MIN, v);
+const driveToV = d => Math.log(d / DRIVE_MIN) / Math.log(DRIVE_MAX / DRIVE_MIN);
+const fmtF = f => f >= 1000 ? (f / 1000).toFixed(2) + " kHz" : Math.round(f) + " Hz";
+const fmtK = f => (f / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+const hexA = (hex, a) => {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+// ---- controls ----------------------------------------------------------
+
+const fnsEl = document.getElementById("fns");
+SHAPERS.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.className = "chip";
+  b.style.setProperty("--c", s.color);
+  b.setAttribute("aria-pressed", String(i === state.shaper));
+  b.innerHTML = `<span class="dot"></span>${s.label}`;
+  b.addEventListener("click", () => { state.shaper = i; dirty = true; markHot(); syncControls(); });
+  fnsEl.appendChild(b);
+});
+
+const osEl = document.getElementById("oschips");
+[1, 2, 4].forEach(m => {
+  const b = document.createElement("button");
+  b.className = "chip";
+  b.style.setProperty("--c", INK);
+  b.setAttribute("aria-pressed", String(m === state.os));
+  b.innerHTML = `<span class="dot"></span>${m}×`;
+  b.addEventListener("click", () => {
+    state.os = m;
+    state.fold = 0; foldHeld = false;   // fold-the-paper is a 1×-only device
+    markHot();
+    syncControls();
+  });
+  osEl.appendChild(b);
+});
+
+const revealBtn = document.getElementById("revealbtn");
+function setReveal(on) {
+  state.reveal = on;
+  revealBtn.setAttribute("aria-pressed", String(on));
+  markHot();
+}
+revealBtn.addEventListener("click", () => setReveal(!state.reveal));
+
+driveEl.addEventListener("input", () => {
+  state.drive = vToDrive(parseFloat(driveEl.value));
+  dirty = true; markHot();
+  syncControls();
+});
+f0El.addEventListener("pointerdown", () => stopSweep());
+f0El.addEventListener("input", () => {
+  stopSweep();
+  setF0(vToF(parseFloat(f0El.value)), true);
+});
+
+function setF0(f, fromUser) {
+  state.f0 = f;
+  f0El.value = fToV(f);
+  f0Val.textContent = fmtF(f);
+  markHot();
+  if (fromUser && audio && soundOn && !state.sweeping) {
+    audio.osc.frequency.setTargetAtTime(state.f0, audio.ctx.currentTime, 0.02);
+  }
+}
+
+const mathEl = document.getElementById("math");
+function renderMath() {
+  if (window.katex) katex.render(FOLD_TEX, mathEl, { displayMode: true, throwOnError: false });
+  else mathEl.textContent = FOLD_PLAIN;
+}
+window.__renderMath = renderMath;
+renderMath();
+
+function syncControls() {
+  [...fnsEl.children].forEach((b, i) => b.setAttribute("aria-pressed", String(i === state.shaper)));
+  [...osEl.children].forEach((b, i) => b.setAttribute("aria-pressed", String([1, 2, 4][i] === state.os)));
+  document.documentElement.style.setProperty("--accent", SHAPERS[state.shaper].color);
+  driveVal.textContent = state.drive.toFixed(2) + "×";
+  f0Val.textContent = fmtF(state.f0);
+  updateAudio();
+}
+driveEl.value = driveToV(state.drive);
+syncControls();
+
+// ---- layout ------------------------------------------------------------
+
+let R = null;
+let og = null, ogc = null;   // spectrogram offscreen
+
+function layout() {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  cv.style.width = W + "px";
+  cv.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const pad = 30, top = 44, gap = 28;
+  const availW = W - 2 * pad - gap;
+  const availH = H - top - pad;
+  const leftW = Math.round(Math.min(360, Math.max(280, 0.32 * availW)));
+  const thumbH = 140, tGap = 18, pGap = 24;
+
+  R = {
+    thumb: { x: pad, y: top, w: leftW, h: thumbH },
+    ctrl:  { x: pad, y: top + thumbH + tGap, w: leftW, h: availH - thumbH - tGap },
+    spec:  { x: pad + leftW + gap, y: top, w: W - pad - (pad + leftW + gap), h: Math.floor(0.55 * (availH - pGap)) },
+  };
+  R.sgram = { x: R.spec.x, y: top + R.spec.h + pGap, w: R.spec.w, h: availH - R.spec.h - pGap };
+
+  // shared frequency plot metrics (spectrum & spectrogram use the same x mapping)
+  const leftInset = 40, rightInset = 10;
+  R.px0 = R.spec.x + leftInset;
+  R.pw = Math.max(50, R.spec.w - leftInset - rightInset);
+
+  controls.style.left = R.ctrl.x + "px";
+  controls.style.top = R.ctrl.y + "px";
+  controls.style.width = R.ctrl.w + "px";
+  controls.style.height = R.ctrl.h + "px";
+
+  // spectrogram history buffer (reset on resize)
+  const sgH = Math.max(20, R.sgram.h - 16);
+  og = document.createElement("canvas");
+  og.width = Math.round(R.pw);
+  og.height = sgH;
+  ogc = og.getContext("2d");
+  ogc.fillStyle = "#ffffff";
+  ogc.fillRect(0, 0, og.width, og.height);
+
+  // curves are computed at 2x horizontal supersampling for smooth spikes
+  const n = Math.round(R.pw) * 2;
+  truePow = new Float64Array(n);
+  aliasPow = new Float64Array(n);
+  dispTrue = new Float64Array(n);
+  dispAlias = new Float64Array(n);
+}
+window.addEventListener("resize", layout);
+
+const freqX = f => R.px0 + f / fs * R.pw;
+const foldCos = () => {
+  const c = Math.cos(state.fold * Math.PI);
+  return Math.abs(c) < 0.01 ? (c < 0 ? -0.01 : 0.01) : c;
+};
+// x-remap for ghost-zone elements while the paper folds over the wall
+const foldX = x => {
+  const wx = freqX(fs / 2);
+  return x <= wx ? x : wx + (x - wx) * foldCos();
+};
+
+// ---- FFT + harmonic amplitudes ------------------------------------------
+
+function fftInPlace(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      let t = re[i]; re[i] = re[j]; re[j] = t;
+      t = im[i]; im[i] = im[j]; im[j] = t;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len;
+    const wr = Math.cos(ang), wi = Math.sin(ang);
+    const half = len >> 1;
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < half; k++) {
+        const ur = re[i + k], ui = im[i + k];
+        const vr = re[i + k + half] * cr - im[i + k + half] * ci;
+        const vi = re[i + k + half] * ci + im[i + k + half] * cr;
+        re[i + k] = ur + vr; im[i + k] = ui + vi;
+        re[i + k + half] = ur - vr; im[i + k + half] = ui - vi;
+        const ncr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = ncr;
+      }
+    }
+  }
+}
+
+// harmonic amplitudes of f(drive·sin) — independent of f0, so sweeps are free
+const AMP_N = 8192;
+const ampDb = new Float64Array(K + 1).fill(-300);
+const ampRe = new Float64Array(AMP_N), ampIm = new Float64Array(AMP_N);
+
+function computeAmps() {
+  const f = SHAPERS[state.shaper].f;
+  for (let n = 0; n < AMP_N; n++) {
+    ampRe[n] = f(state.drive * Math.sin(2 * Math.PI * n / AMP_N));
+    ampIm[n] = 0;
+  }
+  fftInPlace(ampRe, ampIm);
+  for (let k = 1; k <= K; k++) {
+    const amp = 2 * Math.hypot(ampRe[k], ampIm[k]) / AMP_N;
+    ampDb[k] = 20 * Math.log10(Math.max(amp, 1e-15));
+  }
+}
+
+// ---- window main lobe for stamping ---------------------------------------
+// Nominal 1024-sample Blackman-Harris window, 8x zero-padded: lobe[j] is the
+// magnitude at frequency offset j·fs/8192. Sized for projector legibility.
+const LOBE_PAD = 8192, LOBE_J = 63;
+const lobe = new Float64Array(LOBE_J + 1);
+(function () {
+  const re = new Float64Array(LOBE_PAD), im = new Float64Array(LOBE_PAD);
+  let s = 0;
+  for (let n = 0; n < 1024; n++) {
+    const t = 2 * Math.PI * n / 1023;
+    const w = 0.35875 - 0.48829 * Math.cos(t) + 0.14128 * Math.cos(2 * t) - 0.01168 * Math.cos(3 * t);
+    re[n] = w; s += w;
+  }
+  fftInPlace(re, im);
+  for (let j = 0; j <= LOBE_J; j++) lobe[j] = Math.hypot(re[j], im[j]) / s;
+})();
+
+// ---- per-frame component model -------------------------------------------
+
+let comps = [];          // {k, ft, fd, db, kind: 'true'|'alias'|'filtered', wraps}
+let truePow, aliasPow, dispTrue, dispAlias;
+
+function buildComponents() {
+  comps.length = 0;
+  const fsm = state.os * fs;
+  for (let k = 1; k <= K; k++) {
+    const db = ampDb[k];
+    if (db <= DB_FLOOR) continue;
+    const ft = k * state.f0;
+    const m = Math.round(ft / fsm);
+    const g = Math.abs(ft - fsm * m);
+    if (ft <= fs / 2 + 1e-9) {
+      comps.push({ k, ft, fd: ft, db, kind: "true", wraps: 0 });
+    } else if (g <= fs / 2 + 1e-9) {
+      comps.push({ k, ft, fd: g, db, kind: "alias", wraps: Math.max(1, m) });
+    } else if (ft <= fs) {
+      comps.push({ k, ft, fd: g, db, kind: "filtered", wraps: 0 });
+    }
+    // components with ft > fs that the decimation filter removes: not drawn
+  }
+}
+
+function stampCurves() {
+  truePow.fill(0);
+  aliasPow.fill(0);
+  const pw = truePow.length;
+  for (const c of comps) {
+    if (c.kind === "filtered") continue;
+    // blend mode: aliases stamp into the same curve as true harmonics —
+    // one innocent spectrum, like a DAW analyzer. reveal splits the layers.
+    const pow = (c.kind === "true" || !state.reveal) ? truePow : aliasPow;
+    const a = Math.pow(10, c.db / 20);
+    const a2 = a * a;
+    const cx = c.fd / fs * pw;
+    const halfW = LOBE_J * pw / LOBE_PAD;
+    const lo = Math.max(0, Math.ceil(cx - halfW)), hi = Math.min(pw - 1, Math.floor(cx + halfW));
+    for (let px = lo; px <= hi; px++) {
+      const dj = Math.abs(px - cx) * LOBE_PAD / pw;
+      const j0 = Math.floor(dj);
+      if (j0 >= LOBE_J) continue;
+      const fr = dj - j0;
+      const lv = lobe[j0] * (1 - fr) + lobe[j0 + 1] * fr;
+      pow[px] += a2 * lv * lv;   // power sum = phase-averaged overlap
+    }
+  }
+}
+
+const powFrac = p => {
+  const db = 10 * Math.log10(p + 1e-12);
+  return Math.min(1, Math.max(0, (db - DB_FLOOR) / (DB_TOP - DB_FLOOR)));
+};
+
+// ---- drawing helpers ------------------------------------------------------
+
+function panelBase(r) { ctx.fillStyle = "#ffffff"; ctx.fillRect(r.x, r.y, r.w, r.h); }
+function panelFrame(r) {
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.2;
+  ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+}
+function clipTo(r, fn) {
+  ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip(); fn(); ctx.restore();
+}
+function label(text, x, y, color = INK, align = "left") {
+  ctx.font = "13px Menlo, Consolas, monospace";
+  ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "top";
+  ctx.fillText(text, x, y);
+}
+function arrowHead(x, y, dx, dy, size, color, alpha) {
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - ux * size - uy * size * 0.5, y - uy * size + ux * size * 0.5);
+  ctx.lineTo(x - ux * size + uy * size * 0.5, y - uy * size - ux * size * 0.5);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// ---- thumbnail: the curve is still the protagonist ------------------------
+
+function drawThumb() {
+  const r = R.thumb, s = SHAPERS[state.shaper];
+  panelBase(r);
+  const ax = a => r.x + (a + A) / (2 * A) * r.w;
+  const ay = a => r.y + r.h - (a + A) / (2 * A) * r.h;
+  clipTo(r, () => {
+    ctx.strokeStyle = INK; ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(ax(0), r.y); ctx.lineTo(ax(0), r.y + r.h);
+    ctx.moveTo(r.x, ay(0)); ctx.lineTo(r.x + r.w, ay(0));
+    ctx.stroke();
+    const N = 160;
+    ctx.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const x = -A + 2 * A * i / N;
+      i ? ctx.lineTo(ax(x), ay(s.f(x))) : ctx.moveTo(ax(x), ay(s.f(x)));
+    }
+    ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.stroke();
+    // drive range lines
+    ctx.strokeStyle = s.color; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    const dxl = Math.max(r.x + 2, Math.min(r.x + r.w - 2, ax(-state.drive)));
+    const dxr = Math.max(r.x + 2, Math.min(r.x + r.w - 2, ax(state.drive)));
+    ctx.moveTo(dxl, r.y); ctx.lineTo(dxl, r.y + r.h);
+    ctx.moveTo(dxr, r.y); ctx.lineTo(dxr, r.y + r.h);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+  panelFrame(r);
+  label("g(x)", r.x + 7, r.y + 5);
+}
+
+// ---- spectrum panel --------------------------------------------------------
+
+let hover = null;      // pointer pos in canvas coords
+let hoverComp = null;  // resolved each draw
+let overHinge = false;
+let sweepDir = 0;      // -1 | 0 | +1 while sweeping
+
+function specMetrics() {
+  const r = R.spec;
+  const topInset = 8, labelStrip = 18;
+  return {
+    r,
+    px0: R.px0, pw: R.pw,
+    py0: r.y + topInset,
+    ph: r.h - topInset - labelStrip - 6,
+    baseY: r.y + topInset + (r.h - topInset - labelStrip - 6),
+  };
+}
+
+function drawSpectrum() {
+  const s = SHAPERS[state.shaper];
+  const m = specMetrics();
+  const { r, px0, pw, py0, ph, baseY } = m;
+  const dbY = db => baseY - (db - DB_FLOOR) / (DB_TOP - DB_FLOOR) * ph;
+  const wallX = freqX(fs / 2);
+  const plotRight = px0 + pw;
+
+  panelBase(r);
+  clipTo(r, () => {
+    // ghost zone background (folds with the paper at 1×)
+    if (state.os === 1) {
+      const fr = foldX(plotRight);
+      ctx.fillStyle = TINT;
+      ctx.fillRect(Math.min(wallX, fr), py0, Math.abs(fr - wallX), ph);
+    } else {
+      ctx.fillStyle = TINT;
+      ctx.fillRect(wallX, py0, plotRight - wallX, ph);
+      // decimation-filter hatch
+      ctx.save();
+      ctx.beginPath(); ctx.rect(wallX, py0, plotRight - wallX, ph); ctx.clip();
+      ctx.strokeStyle = FAINT; ctx.globalAlpha = 0.25; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = wallX - ph; x < plotRight; x += 14) {
+        ctx.moveTo(x, baseY); ctx.lineTo(x + ph, py0);
+      }
+      ctx.stroke();
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+
+    // dB gridlines
+    for (let db = 0; db > DB_FLOOR; db -= 12) {
+      const py = dbY(db);
+      ctx.beginPath();
+      ctx.strokeStyle = db === 0 ? FAINT : GRID;
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash(db === 0 ? [4, 4] : []);
+      ctx.moveTo(px0, py); ctx.lineTo(plotRight, py);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (db === 0 || db === -24 || db === -48 || db === -72) {
+        ctx.font = "12px Menlo, Consolas, monospace";
+        ctx.fillStyle = MUT; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        ctx.fillText(db === 0 ? "0dB" : String(db), px0 - 5, py);
+      }
+    }
+
+    // frequency labels
+    ctx.font = "12px Menlo, Consolas, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (let i = 0; i <= 4; i++) {
+      const f = fs * i / 4;
+      ctx.fillStyle = i === 2 ? INK : MUT;
+      ctx.fillText(i === 0 ? "0" : fmtK(f), freqX(f), baseY + 5);
+    }
+
+    // the two curves: true (accent) under, alias (crimson) on top.
+    // skipFloor breaks the stroke where the curve sits on the floor, so the
+    // alias layer only draws where alias energy actually exists.
+    const drawCurve = (disp, color, fillA, skipFloor) => {
+      const n = disp.length;
+      const xAt = i => px0 + i / (n - 1) * pw;
+      ctx.beginPath();
+      ctx.moveTo(px0, baseY);
+      for (let i = 0; i < n; i++) ctx.lineTo(xAt(i), baseY - disp[i] * ph);
+      ctx.lineTo(px0 + pw, baseY);
+      ctx.closePath();
+      ctx.fillStyle = color; ctx.globalAlpha = fillA; ctx.fill(); ctx.globalAlpha = 1;
+      // stroke: each above-floor segment rises from and returns to the baseline,
+      // so spike outlines never end hanging in mid-air
+      ctx.beginPath();
+      let pen = false;
+      for (let i = 0; i < n; i++) {
+        const x = xAt(i);
+        if (skipFloor && disp[i] < 0.004) {
+          if (pen) { ctx.lineTo(x, baseY); pen = false; }
+          continue;
+        }
+        const y = baseY - disp[i] * ph;
+        if (!pen) { ctx.moveTo(x - 0.5, baseY); pen = true; }
+        ctx.lineTo(x, y);
+      }
+      if (pen) ctx.lineTo(px0 + pw, baseY);
+      ctx.strokeStyle = color; ctx.lineWidth = 1.6;
+      ctx.lineJoin = "round"; ctx.lineCap = "round";
+      ctx.stroke();
+    };
+    // neutral floor baseline; the colored curves only draw where energy exists
+    ctx.beginPath();
+    ctx.strokeStyle = INK; ctx.lineWidth = 1;
+    ctx.moveTo(px0, baseY + 0.5); ctx.lineTo(plotRight, baseY + 0.5);
+    ctx.stroke();
+    drawCurve(dispTrue, s.color, 0.15, true);
+    drawCurve(dispAlias, ALIAS, 0.2, true);
+
+    // alias tip dots (reveal only) + sweep arrows
+    let arrows = 0;
+    for (const c of comps) {
+      if (c.kind === "alias" && state.reveal) {
+        const x = freqX(c.fd), y = dbY(c.db);
+        ctx.fillStyle = ALIAS;
+        ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 7); ctx.fill();
+      }
+      if (sweepDir !== 0 && c.db > -48 && arrows < 12 && c.kind !== "filtered") {
+        const dNext = c.kind === "true" ? sweepDir
+          : Math.sign(foldOf(c.k * (state.f0 * (sweepDir > 0 ? 1.001 : 0.999))) - c.fd) || -sweepDir;
+        arrowHead(freqX(c.fd) + dNext * 8, dbY(c.db) - 7, dNext, 0, 5,
+          c.kind === "true" || !state.reveal ? s.color : ALIAS, 0.85);
+        arrows++;
+      }
+    }
+
+    // ghost stems (dashed, in the ghost zone; fold-aware)
+    for (const c of comps) {
+      if (c.ft <= fs / 2 || c.ft > fs) continue;
+      const x = foldX(freqX(c.ft));
+      const y = dbY(c.db);
+      const dim = c.kind === "filtered" ? 0.22 : 0.35;
+      ctx.strokeStyle = s.color;
+      ctx.globalAlpha = dim;
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(x, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 7);
+      ctx.strokeStyle = s.color; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // mirror arcs: first-mirror ghosts, loudest 8, hidden while folding.
+    // hidden in blend mode too — they would give the reveal away.
+    if (state.os === 1 && state.fold < 0.02 && state.reveal) {
+      const ghosts = comps.filter(c => c.kind === "alias" && c.ft <= fs && c.db > -60)
+        .sort((a, b) => b.db - a.db).slice(0, 8);
+      for (const c of ghosts) {
+        const x1 = freqX(c.ft), x2 = freqX(c.fd);
+        const y1 = dbY(c.db), y2 = dbY(c.db);
+        const mx = (x1 + x2) / 2, my = Math.min(y1, y2) - 24;
+        ctx.strokeStyle = FAINT; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(mx, my, x2, y2); ctx.stroke();
+        ctx.globalAlpha = 1;
+        arrowHead(x2 + 4, y2 - 3, -0.8, 0.6, 5, FAINT, 0.5);
+      }
+    }
+
+    // the Nyquist wall
+    const heavyWallX = state.os === 1 ? wallX : (state.os === 2 ? plotRight - 1 : null);
+    if (state.os >= 2) {
+      ctx.strokeStyle = FAINT; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(wallX, py0); ctx.lineTo(wallX, baseY); ctx.stroke();
+      ctx.setLineDash([]);
+      label("decim lpf", wallX + 6, py0 + 16, MUT);
+    }
+    if (heavyWallX !== null) {
+      ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(heavyWallX, py0); ctx.lineTo(heavyWallX, baseY); ctx.stroke();
+    }
+    if (state.os === 1) {
+      label("fs/2", wallX + 6, py0 + 2, INK);
+      // hinge glyph
+      ctx.fillStyle = INK;
+      ctx.beginPath();
+      ctx.moveTo(wallX, py0); ctx.lineTo(wallX + 9, py0); ctx.lineTo(wallX, py0 + 9);
+      ctx.closePath(); ctx.fill();
+    } else if (state.os === 2) {
+      label("fs/2 (2×)", plotRight - 8, py0 + 2, INK, "right");
+    } else {
+      label("fs/2 (4×) →", plotRight - 8, py0 + 2, INK, "right");
+    }
+
+    // hover chain
+    if (hoverComp) {
+      const c = hoverComp;
+      const hx = freqX(c.fd), hy = dbY(c.db);
+      if (c.kind !== "true" && c.ft <= fs) {
+        const gx = foldX(freqX(c.ft));
+        ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(gx, baseY); ctx.lineTo(gx, dbY(c.db)); ctx.stroke();
+        ctx.setLineDash([]);
+        if (c.kind === "alias" && state.fold < 0.02) {
+          const mx = (gx + hx) / 2, my = dbY(c.db) - 28;
+          ctx.strokeStyle = INK; ctx.globalAlpha = 0.7; ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.moveTo(gx, dbY(c.db)); ctx.quadraticCurveTo(mx, my, hx, hy); ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
+      if (c.kind !== "filtered") {
+        ctx.fillStyle = c.kind === "true" ? s.color : ALIAS;
+        ctx.beginPath(); ctx.arc(hx, hy, 4, 0, 7); ctx.fill();
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.2; ctx.stroke();
+      }
+      let text;
+      const kf = `${c.k}·f₀ = ${fmtK(c.ft)}`;
+      if (c.kind === "true") text = `k=${c.k}  ${kf}  ${c.db.toFixed(1)}dB`;
+      else if (c.kind === "alias")
+        text = `k=${c.k}  ${kf} → ${fmtK(c.fd)}${c.wraps > 1 ? "  ↩" + c.wraps : ""}  ${c.db.toFixed(1)}dB`;
+      else text = `k=${c.k}  ${kf}  removed by ${state.os}× decim lpf`;
+      ctx.font = "13px Menlo, Consolas, monospace";
+      ctx.fillStyle = c.kind === "alias" ? ALIAS : INK;
+      ctx.textAlign = "right"; ctx.textBaseline = "top";
+      ctx.fillText(text.replace(/-/g, "−"), r.x + r.w - 10, r.y + 8);
+    }
+  });
+  panelFrame(r);
+  label("spectrum (dB)", r.x + 8, r.y + 6, INK);
+}
+
+// general fold of an absolute frequency to its landing spot (current mode)
+function foldOf(f) {
+  const fsm = state.os * fs;
+  return Math.abs(f - fsm * Math.round(f / fsm));
+}
+
+// ---- spectrogram -----------------------------------------------------------
+
+function sgramStep() {
+  const s = SHAPERS[state.shaper];
+  const pw = og.width;
+  const wallPx = Math.round(fs / 2 / fs * pw);
+  ogc.drawImage(og, 0, 1);
+  ogc.fillStyle = "#ffffff";
+  ogc.fillRect(0, 0, pw, 1);
+  ogc.fillStyle = TINT;
+  ogc.fillRect(wallPx, 0, pw - wallPx, 1);
+  const px = f => Math.round(f / fs * pw);
+  for (const c of comps) {
+    const a = Math.max(0, Math.min(1, (c.db + 90) / 96));
+    if (c.kind === "true") {
+      ogc.fillStyle = hexA(s.color, a);
+      ogc.fillRect(px(c.fd) - 1, 0, 2, 1);
+    } else if (c.kind === "alias") {
+      if (c.ft <= fs) {
+        ogc.fillStyle = hexA(s.color, a * 0.35);
+        ogc.fillRect(px(c.ft) - 1, 0, 2, 1);
+      }
+      ogc.fillStyle = hexA(state.reveal ? ALIAS : s.color, a);
+      ogc.fillRect(px(c.fd) - 1, 0, 2, 1);
+    } else if (c.ft <= fs) {
+      ogc.fillStyle = hexA(s.color, a * 0.22);
+      ogc.fillRect(px(c.ft) - 1, 0, 2, 1);
+    }
+  }
+}
+
+function drawSgram() {
+  const r = R.sgram;
+  panelBase(r);
+  const y0 = r.y + 8;
+  ctx.drawImage(og, R.px0, y0);
+  // the wall continues through time
+  const wallX = freqX(fs / 2);
+  ctx.strokeStyle = INK;
+  ctx.globalAlpha = state.os === 1 ? 0.8 : 0.3;
+  ctx.lineWidth = state.os === 1 ? 1.5 : 1;
+  if (state.os >= 2) ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(wallX, y0); ctx.lineTo(wallX, y0 + og.height); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+  panelFrame(r);
+  label("spectrogram", r.x + 8, r.y + 6, INK);
+  label("t ↓", r.x + 8, r.y + r.h - 18, MUT);
+}
+
+// ---- hover resolution --------------------------------------------------------
+
+function resolveHover() {
+  hoverComp = null;
+  overHinge = false;
+  if (!hover) return;
+  const m = specMetrics();
+  const inPlot = hover.x >= m.px0 && hover.x <= m.px0 + m.pw && hover.y >= m.r.y && hover.y <= m.r.y + m.r.h;
+  if (!inPlot) return;
+  const wallX = freqX(fs / 2);
+  if (state.os === 1 && Math.hypot(hover.x - wallX, hover.y - m.py0) < 14) overHinge = true;
+  let best = null, bestD = 9;
+  for (const c of comps) {
+    const d1 = Math.abs(hover.x - freqX(c.fd));
+    const d2 = c.ft > fs / 2 && c.ft <= fs ? Math.abs(hover.x - foldX(freqX(c.ft))) : 1e9;
+    const d = Math.min(c.kind === "filtered" ? 1e9 : d1, d2);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  hoverComp = best;
+  cv.style.cursor = overHinge ? (foldHeld ? "grabbing" : "grab") : "";
+}
+
+// ---- sweep -------------------------------------------------------------------
+
+let sweep = null; // {t0, v0, v1, dur}
+
+function startLeg(v0, v1) {
+  let dur = SWEEP_LEG_S * 1000 * Math.abs(v1 - v0);
+  if (dur < 60) { v0 = v1; v1 = v1 >= 0.999 ? 0 : 1; dur = SWEEP_LEG_S * 1000; }
+  sweep = { t0: performance.now(), v0, v1, dur };
+  sweepDir = Math.sign(v1 - v0);
+  if (audio && soundOn) {
+    const t = audio.ctx.currentTime;
+    const fr = audio.osc.frequency;
+    fr.cancelScheduledValues(t);
+    fr.setValueAtTime(Math.max(1, state.f0), t);
+    fr.exponentialRampToValueAtTime(vToF(sweep.v1), t + sweep.dur / 1000);
+  }
+}
+
+function stepSweep() {
+  const u = Math.min(1, (performance.now() - sweep.t0) / sweep.dur);
+  setF0(vToF(sweep.v0 + (sweep.v1 - sweep.v0) * u), false);
+  if (u >= 1) startLeg(sweep.v1, sweep.v1 >= 0.999 ? 0 : 1);
+}
+
+function stopSweep() {
+  if (!state.sweeping) return;
+  state.sweeping = false;
+  sweep = null;
+  sweepDir = 0;
+  sweepBtn.setAttribute("aria-pressed", "false");
+  if (audio && soundOn) {
+    const t = audio.ctx.currentTime;
+    audio.osc.frequency.cancelScheduledValues(t);
+    audio.osc.frequency.setTargetAtTime(state.f0, t, 0.02);
+  }
+}
+
+sweepBtn.addEventListener("click", () => {
+  if (state.sweeping) stopSweep();
+  else {
+    state.sweeping = true;
+    sweepBtn.setAttribute("aria-pressed", "true");
+    const v = fToV(state.f0);
+    startLeg(v, v >= 0.999 ? 0 : 1);
+  }
+});
+
+// ---- pointer & keys ------------------------------------------------------------
+
+cv.addEventListener("pointermove", e => {
+  const rect = cv.getBoundingClientRect();
+  hover = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+});
+cv.addEventListener("pointerleave", () => { hover = null; hoverComp = null; });
+cv.addEventListener("pointerdown", e => {
+  const rect = cv.getBoundingClientRect();
+  hover = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  resolveHover();
+  if (overHinge && state.os === 1) {
+    foldHeld = true;
+    cv.setPointerCapture(e.pointerId);
+  }
+});
+cv.addEventListener("pointerup", () => { foldHeld = false; });
+window.addEventListener("keydown", e => {
+  if (/^(INPUT|BUTTON)$/.test(e.target.tagName)) return;
+  if (e.code === "Space") { e.preventDefault(); sweepBtn.click(); }
+  if (e.key === "f" || e.key === "F") { if (state.os === 1) foldHeld = true; }
+  if (e.key === "r" || e.key === "R") setReveal(!state.reveal);
+});
+window.addEventListener("keyup", e => {
+  if (e.key === "f" || e.key === "F") foldHeld = false;
+});
+
+// ---- main loop -------------------------------------------------------------------
+
+layout();
+markHot();   // paint a little spectrogram history on load
+
+let last = performance.now();
+function frame(now) {
+  const dt = now - last;
+  last = now;
+  paramTick = false;
+
+  if (state.sweeping && sweep) stepSweep();
+
+  // fold-the-paper animation (600 ms, display transform only)
+  const ft = (foldHeld && state.os === 1) ? 1 : 0;
+  if (state.fold !== ft) {
+    const step = dt / 600;
+    state.fold = ft > state.fold ? Math.min(1, state.fold + step) : Math.max(0, state.fold - step);
+  }
+
+  if (dirty) { computeAmps(); dirty = false; }
+  buildComponents();
+  stampCurves();
+
+  const ease = reducedMotion ? 1 : 0.35;
+  for (let i = 0; i < dispTrue.length; i++) {
+    dispTrue[i] += (powFrac(truePow[i]) - dispTrue[i]) * ease;
+    dispAlias[i] += (powFrac(aliasPow[i]) - dispAlias[i]) * ease;
+  }
+
+  const hot = now < hotUntil && state.fold === 0;
+  if ((hot && !reducedMotion) || (reducedMotion && paramTick)) sgramStep();
+
+  resolveHover();
+  ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
+  drawThumb();
+  drawSpectrum();
+  drawSgram();
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---- sound ---------------------------------------------------------------
+// osc -> WaveShaperNode (curve = f(drive·x), oversample follows the 1×/2×/4×
+// chips) -> DC blocker -> gain. Naive aliasing and the oversampling fix are
+// both audible. Note: browser decimation filters vary; the visual shows the
+// ideal filter, so 2×/4× may sound slightly dirtier than they look.
+
+var audio = null;
+var soundOn = false;
+const soundBtn = document.getElementById("soundbtn");
+
+function bakeCurve() {
+  const f = SHAPERS[state.shaper].f;
+  const N = 2049;
+  const curve = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const x = -1 + 2 * i / (N - 1);
+    curve[i] = Math.max(-2, Math.min(2, f(state.drive * x)));
+  }
+  return curve;
+}
+
+function updateAudio() {
+  if (!audio || !soundOn) return;
+  audio.shaper.curve = bakeCurve();
+  audio.shaper.oversample = OS_MAP[state.os];
+}
+
+function startAudio() {
+  if (!audio) {
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = actx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = state.f0;
+    const shaper = actx.createWaveShaper();
+    const dcblock = actx.createBiquadFilter();
+    dcblock.type = "highpass";
+    dcblock.frequency.value = 8;
+    const gain = actx.createGain();
+    gain.gain.value = 0;
+    osc.connect(shaper).connect(dcblock).connect(gain).connect(actx.destination);
+    osc.start();
+    audio = { ctx: actx, osc, shaper, gain };
+    if (Math.abs(actx.sampleRate - fs) > 1) fs = actx.sampleRate;  // see what you hear
+  }
+  audio.ctx.resume();
+  audio.shaper.curve = bakeCurve();
+  audio.shaper.oversample = OS_MAP[state.os];
+  const t = audio.ctx.currentTime;
+  audio.osc.frequency.setValueAtTime(Math.max(1, state.f0), t);
+  audio.gain.gain.cancelScheduledValues(t);
+  audio.gain.gain.setTargetAtTime(0.1, t, 0.02);
+  if (state.sweeping && sweep) startLeg(fToV(state.f0), sweep.v1);
+}
+
+function stopAudio() {
+  if (!audio) return;
+  const t = audio.ctx.currentTime;
+  audio.gain.gain.cancelScheduledValues(t);
+  audio.gain.gain.setTargetAtTime(0, t, 0.02);
+  setTimeout(() => { if (!soundOn && audio) audio.ctx.suspend(); }, 250);
+}
+
+soundBtn.addEventListener("click", () => {
+  soundOn = !soundOn;
+  soundBtn.setAttribute("aria-pressed", String(soundOn));
+  soundOn ? startAudio() : stopAudio();
+});
+</script>
+</body>
+</html>

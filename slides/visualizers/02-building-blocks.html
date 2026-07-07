@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>digital audio — sum of sinusoids</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" onload="window.__renderMath && window.__renderMath()"></script>
+<style>
+  :root {
+    --ink: #1c2333;
+    --grid: #d7dce5;
+    --muted: #5a6372;
+    --faint: #9aa4b2;
+    --paper: #ffffff;
+    --page: #f2f3f0;
+    --accent: #e4572e;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--mono);
+    overflow: auto;
+  }
+  #stage {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    min-width: 690px;
+    min-height: 540px;
+  }
+  canvas { position: absolute; inset: 0; display: block; }
+
+  #title {
+    position: absolute;
+    left: 30px; top: 12px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    user-select: none;
+  }
+  #title span { color: var(--muted); }
+
+  #nav {
+    position: absolute;
+    top: 12px; right: 30px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    user-select: none;
+  }
+  #nav a { color: var(--muted); text-decoration: none; margin-left: 16px; }
+  #nav a:hover { color: var(--ink); }
+  #nav a.here { color: var(--ink); }
+
+  #controls {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    justify-content: safe center;
+    gap: 10px;
+    padding: 4px 2px;
+    min-width: 0;
+    overflow: hidden auto;
+  }
+  #controls > * { flex-shrink: 0; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  #targets { gap: 6px; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    color: var(--muted);
+    background: var(--paper);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    padding: 5px 10px 5px 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    line-height: 1;
+  }
+  .chip .dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--c);
+    opacity: 0.45;
+    flex: none;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--c);
+    box-shadow: inset 0 0 0 1px var(--c);
+  }
+  .chip[aria-pressed="true"] .dot { opacity: 1; }
+  .chip:focus-visible, .iconbtn:focus-visible, input[type=range]:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  #math {
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+    color: var(--ink);
+    padding: 4px 0;
+    overflow: auto hidden;
+  }
+  #math .katex-display { margin: 0; }
+  #math .katex-display > .katex { text-align: left; }
+
+  .sliderrow { gap: 10px; flex-wrap: nowrap; }
+  .sliderrow label { font-size: 13.5px; color: var(--muted); min-width: 8ch; }
+  input[type=range] {
+    flex: 1 1 80px;
+    max-width: 220px;
+    accent-color: var(--accent);
+    height: 18px;
+  }
+  .val {
+    font-size: 13.5px;
+    color: var(--ink);
+    min-width: 6ch;
+    text-align: right;
+  }
+
+  .iconbtn {
+    background: var(--paper);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    width: 42px; height: 26px;
+    cursor: pointer;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .iconbtn:hover { border-color: var(--muted); }
+  .iconbtn[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .iconbtn svg { display: block; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="title">digital audio <span>— sum of sinusoids</span></div>
+  <div id="nav">
+    <a href="01-sampling.html">01 sampling</a>
+    <a href="02-building-blocks.html" class="here">02 sinusoids</a>
+  </div>
+  <div id="controls">
+    <div class="row" id="targets"></div>
+    <div id="math" aria-live="polite"></div>
+    <div class="row sliderrow">
+      <label for="n">partials</label>
+      <input id="n" type="range" min="1" max="64" step="1" value="8">
+      <span class="val" id="nval">N = 8</span>
+    </div>
+    <div class="row sliderrow">
+      <label for="f0">f₀</label>
+      <input id="f0" type="range" min="0" max="1" step="0.001" value="0.371">
+      <span class="val" id="f0val">110 Hz</span>
+    </div>
+    <div class="row">
+      <button id="partialsbtn" class="chip" aria-pressed="true" title="show individual partials"
+        style="--c: #5a6372;"><span class="dot"></span>partials</button>
+      <button id="viewbtn" class="chip" aria-pressed="false" title="3D view"
+        style="--c: #5a6372;"><span class="dot"></span>3D</button>
+      <button id="soundbtn" class="iconbtn" aria-pressed="false" aria-label="sound" title="sound" style="margin-left:6px;">
+        <svg width="18" height="16" viewBox="0 0 20 16" fill="none" stroke="currentColor"
+          stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 6v4h3l4 3.5v-11L5 6H2z" fill="currentColor" stroke="none"/>
+          <path d="M12.5 5.5a4.2 4.2 0 0 1 0 5"/>
+          <path d="M15.2 3.5a7.5 7.5 0 0 1 0 9"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const INK = "#1c2333", GRID = "#d7dce5", FAINT = "#9aa4b2", MUT = "#5a6372", TINT = "#f2f4f8";
+
+// all three series share the same phase convention (pure sine terms, φ = 0),
+// and ideal(t) is derived from that convention — so the dashed target lands
+// exactly on the partial sum as N grows.
+const TARGETS = [
+  { id: "square", label: "square", color: "#e4572e",
+    coef: k => k % 2 === 1 ? 4 / (Math.PI * k) : 0,
+    topK: n => 2 * n - 1,
+    ideal: t => Math.sign(Math.sin(2 * Math.PI * t)) || 1,
+    tex: n => `x(t) = \\frac{4}{\\pi}\\sum_{\\substack{k=1\\\\ k\\ \\mathrm{odd}}}^{${2 * n - 1}} \\frac{\\sin(2\\pi k f t)}{k}`,
+    plain: n => `x = (4/π) Σ sin(2πkft)/k,  k odd ≤ ${2 * n - 1}` },
+  { id: "saw", label: "saw", color: "#3a7ca5",
+    coef: k => 2 / Math.PI * (k % 2 === 1 ? 1 : -1) / k,
+    topK: n => n,
+    ideal: t => 2 * (t - Math.round(t)),
+    tex: n => `x(t) = \\frac{2}{\\pi}\\sum_{k=1}^{${n}} \\frac{(-1)^{k+1}}{k}\\,\\sin(2\\pi k f t)`,
+    plain: n => `x = (2/π) Σ (−1)^(k+1) sin(2πkft)/k,  k ≤ ${n}` },
+  { id: "triangle", label: "triangle", color: "#2a9d8f",
+    coef: k => k % 2 === 1 ? 8 / (Math.PI * Math.PI) * (((k - 1) / 2) % 2 === 0 ? 1 : -1) / (k * k) : 0,
+    topK: n => 2 * n - 1,
+    ideal: t => 2 / Math.PI * Math.asin(Math.sin(2 * Math.PI * t)),
+    tex: n => `x(t) = \\frac{8}{\\pi^{2}}\\sum_{\\substack{k=1\\\\ k\\ \\mathrm{odd}}}^{${2 * n - 1}} \\frac{(-1)^{(k-1)/2}}{k^{2}}\\,\\sin(2\\pi k f t)`,
+    plain: n => `x = (8/π²) Σ (−1)^((k−1)/2) sin(2πkft)/k²,  k odd ≤ ${2 * n - 1}` },
+];
+
+const K_MAX = 127;     // harmonics tracked (square/triangle at N=64 reach 127)
+const CYCLES = 2;      // cycles shown in the time window
+const AMP = 1.5;       // amplitude range of the time panel (Gibbs horns fit)
+
+// 3D view: the lowest LANE_CAP partials each get a depth lane and a color
+const LANE_CAP = 16;
+const LANE_COLORS = ["#3b5bdb", "#2f9e44", "#c2255c", "#e8990c", "#7048e8", "#0c8599"];
+
+// the spectrum is a log-frequency dB analyzer, like the one in a DAW
+const F0_MIN = 30, F0_MAX = 1000;   // fundamental slider range, Hz (log-mapped)
+const vToF0 = v => F0_MIN * Math.pow(F0_MAX / F0_MIN, v);
+const f0ToV = f => Math.log(f / F0_MIN) / Math.log(F0_MAX / F0_MIN);
+const F_LO = 20, F_HI = 20000;      // analyzer frequency range, Hz
+const DB_TOP = 6, DB_FLOOR = -90;   // analyzer dB range
+const LOBE_HW = 2.5;                // half-width of each harmonic peak, px
+const logF = f => Math.log(f / F_LO) / Math.log(F_HI / F_LO);
+
+const state = {
+  target: 0,           // square
+  n: 8,                // partials included, 1..64
+  f0: 110,             // fundamental, Hz (30..1000)
+  showPartials: true,
+  view3d: false,
+};
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// signed per-harmonic amplitudes actually drawn, eased toward the target each
+// frame — waveform and spectrum morph together when N or the target changes
+const dispAmp = new Float64Array(K_MAX + 1);
+
+// 2D↔3D mix for the time panel, eased the same way
+let viewMix = 0;
+
+// cached partial-sum over the time window; rebuilt only when dispAmp moves
+const WAVE_PTS = 2048;
+let sumBuf = null;
+
+const included = k => k <= TARGETS[state.target].topK(state.n) &&
+  TARGETS[state.target].coef(k) !== 0;
+
+// harmonics with a depth lane: the lowest LANE_CAP that are included or
+// whose drawn amplitude is still easing out
+function lanes() {
+  const out = [];
+  for (let k = 1; k <= K_MAX && out.length < LANE_CAP; k++) {
+    if (included(k) || Math.abs(dispAmp[k]) > 1e-4) out.push(k);
+  }
+  return out;
+}
+
+const stage = document.getElementById("stage");
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const controls = document.getElementById("controls");
+const nEl = document.getElementById("n");
+const nVal = document.getElementById("nval");
+const f0El = document.getElementById("f0");
+const f0Val = document.getElementById("f0val");
+
+// ---- controls ----------------------------------------------------------
+
+const targetsEl = document.getElementById("targets");
+TARGETS.forEach((tg, i) => {
+  const b = document.createElement("button");
+  b.className = "chip";
+  b.style.setProperty("--c", tg.color);
+  b.setAttribute("aria-pressed", String(i === state.target));
+  b.innerHTML = `<span class="dot"></span>${tg.label}`;
+  b.addEventListener("click", () => { state.target = i; syncControls(); });
+  targetsEl.appendChild(b);
+});
+
+const partialsBtn = document.getElementById("partialsbtn");
+partialsBtn.addEventListener("click", () => {
+  state.showPartials = !state.showPartials;
+  partialsBtn.setAttribute("aria-pressed", String(state.showPartials));
+});
+
+const viewBtn = document.getElementById("viewbtn");
+viewBtn.addEventListener("click", () => {
+  state.view3d = !state.view3d;
+  viewBtn.setAttribute("aria-pressed", String(state.view3d));
+  if (state.view3d && !state.showPartials) partialsBtn.click();
+});
+
+nEl.addEventListener("input", () => setN(parseInt(nEl.value, 10)));
+
+function setN(n) {
+  state.n = Math.min(64, Math.max(1, n));
+  nEl.value = state.n;
+  nVal.textContent = "N = " + state.n;
+  renderMath();
+  updateAudio();
+}
+
+f0El.addEventListener("input", () => setF0(vToF0(parseFloat(f0El.value))));
+
+function setF0(f) {
+  state.f0 = Math.min(F0_MAX, Math.max(F0_MIN, f));
+  f0Val.textContent = fmtHz(state.f0);
+  updateFreq();
+}
+
+const mathEl = document.getElementById("math");
+function renderMath() {
+  const tg = TARGETS[state.target];
+  if (window.katex) katex.render(tg.tex(state.n), mathEl, { displayMode: true, throwOnError: false });
+  else mathEl.textContent = tg.plain(state.n);
+}
+window.__renderMath = renderMath;
+
+function syncControls() {
+  [...targetsEl.children].forEach((b, i) => b.setAttribute("aria-pressed", String(i === state.target)));
+  document.documentElement.style.setProperty("--accent", TARGETS[state.target].color);
+  nVal.textContent = "N = " + state.n;
+  renderMath();
+  updateAudio();
+}
+syncControls();
+
+// ---- layout ------------------------------------------------------------
+
+let R = null;
+let specPow = new Float64Array(2);   // per-pixel power for the analyzer curve
+
+function layout() {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  cv.style.width = W + "px";
+  cv.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const pad = 30, top = 44, gap = 28;
+  const availH = H - top - pad - gap;
+  const availW = W - 2 * pad - gap;
+  const timeH = Math.max(250, Math.floor(0.55 * availH));
+  const specW = Math.max(340, Math.floor(0.55 * availW));
+
+  R = {
+    time: { x: pad, y: top, w: W - 2 * pad, h: timeH },
+    spec: { x: pad, y: top + timeH + gap, w: specW, h: Math.max(150, availH - timeH) },
+  };
+  R.ctrl = { x: R.spec.x + specW + gap, y: R.spec.y, w: W - pad - (pad + specW + gap), h: R.spec.h };
+
+  R.tx0 = R.time.x + 12;
+  R.tw = R.time.w - 24;
+  R.px0 = R.spec.x + 40;
+  R.pw = R.spec.w - 52;
+  specPow = new Float64Array(Math.max(2, Math.round(R.pw) * 4));
+
+  controls.style.left = R.ctrl.x + "px";
+  controls.style.top = R.ctrl.y + "px";
+  controls.style.width = R.ctrl.w + "px";
+  controls.style.height = R.ctrl.h + "px";
+}
+window.addEventListener("resize", layout);
+layout();
+
+// ---- mapping -----------------------------------------------------------
+
+const fmtHz = f => f >= 1000 ? (f / 1000).toFixed(2) + " kHz" : Math.round(f) + " Hz";
+
+// ---- drawing helpers -----------------------------------------------------
+
+function panelBase(r) { ctx.fillStyle = "#ffffff"; ctx.fillRect(r.x, r.y, r.w, r.h); }
+function panelFrame(r) {
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.2;
+  ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+}
+function clipTo(r, fn) {
+  ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip(); fn(); ctx.restore();
+}
+function label(text, x, y, color = INK, align = "left") {
+  ctx.font = "13px Menlo, Consolas, monospace";
+  ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "top";
+  ctx.fillText(text, x, y);
+}
+function arrowHead(x, y, dx, dy, size, color, alpha) {
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - ux * size - uy * size * 0.5, y - uy * size + ux * size * 0.5);
+  ctx.lineTo(x - ux * size + uy * size * 0.5, y - uy * size - ux * size * 0.5);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// ---- time panel ----------------------------------------------------------
+
+function drawTime() {
+  const r = R.time;
+  const tg = TARGETS[state.target];
+  const topK = tg.topK(state.n);
+
+  // oblique projection: z = 0 is the front plane (the sum), z = 1 the deepest
+  // lane, depth running up and to the right. At m = 0 this is the flat view.
+  const m = viewMix;
+  const txw = R.tw * (1 - 0.32 * m);            // front-plane time width
+  const DX = 0.30 * R.tw * m;                   // depth x offset at z = 1
+  const DY = 0.42 * r.h * m;                    // depth y rise at z = 1
+  const ampH = (r.h / 2 - 10) * (1 - 0.30 * m); // amplitude half-scale
+  const cY = r.y + r.h / 2 + 0.14 * r.h * m;    // front-plane center
+  const px3 = (t, z) => R.tx0 + t / CYCLES * txw + DX * z;
+  const py3 = (a, z) => cY - a / AMP * ampH - DY * z;
+
+  const laneKs = lanes();
+
+  panelBase(r);
+  clipTo(r, () => {
+    // zero axis: panel-wide when flat, the front-plane time axis in 3D
+    ctx.strokeStyle = INK; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(r.x + (px3(0, 0) - r.x) * m, cY);
+    ctx.lineTo(r.x + r.w + (px3(CYCLES, 0) - r.x - r.w) * m, cY);
+    ctx.stroke();
+
+    // ideal target: where the series is headed (flat view only)
+    if (m < 0.999) {
+      const N = 600;
+      ctx.strokeStyle = FAINT; ctx.lineWidth = 1.4; ctx.setLineDash([4, 4]);
+      ctx.globalAlpha = 1 - m;
+      ctx.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const t = i / N * CYCLES;
+        const px = px3(t, 0), py = py3(tg.ideal(t), 0);
+        i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+
+    // depth axis: frequency, through the base of every wall stem
+    if (m > 0 && state.showPartials) {
+      const x0 = px3(CYCLES, 0), y0 = py3(0, 0);
+      const x1 = px3(CYCLES, 1), y1 = py3(0, 1);
+      const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+      const ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+      ctx.strokeStyle = FAINT; ctx.lineWidth = 1; ctx.globalAlpha = 0.6 * m;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      ctx.globalAlpha = 1;
+      arrowHead(x1 + ux * 8, y1 + uy * 8, ux, uy, 7, FAINT, 0.6 * m);
+      ctx.globalAlpha = m;
+      label("f", x1 + ux * 8 - 2, y1 + uy * 8 - 18, MUT, "right");
+      ctx.globalAlpha = 1;
+    }
+
+    // individual partials, deepest lane first. Each lane draws its axis, its
+    // wall stem (|amplitude| at the far end), and the partial itself — one
+    // path stroked in both styles, crossfaded by m. Only the lowest few get
+    // lanes; higher ones just feed the sum.
+    if (state.showPartials) {
+      for (let s = laneKs.length - 1; s >= 0; s--) {
+        const k = laneKs[s];
+        const z = (s + 1) / LANE_CAP;
+        const col = LANE_COLORS[s % LANE_COLORS.length];
+        const y0 = py3(0, z);
+
+        if (m > 0) {
+          const ex = px3(CYCLES, z);
+          ctx.strokeStyle = FAINT; ctx.lineWidth = 1; ctx.globalAlpha = 0.35 * m;
+          ctx.beginPath(); ctx.moveTo(px3(0, z), y0); ctx.lineTo(ex, y0); ctx.stroke();
+          ctx.globalAlpha = 1;
+          arrowHead(ex + 6, y0, 1, 0, 5, FAINT, 0.35 * m);
+
+          const sy = py3(Math.abs(dispAmp[k]), z);
+          ctx.strokeStyle = col; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.9 * m;
+          ctx.beginPath(); ctx.moveTo(ex, y0); ctx.lineTo(ex, sy); ctx.stroke();
+          ctx.globalAlpha = m; ctx.fillStyle = col;
+          ctx.beginPath(); ctx.arc(ex, sy, 3, 0, 7); ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+
+        const isTop = k === topK;
+        const aFlat = included(k) ? (isTop ? 0.5 : 0.15) * (1 - m) : 0;
+        const aLane = 0.85 * m;
+        if (aFlat < 0.004 && aLane < 0.004) continue;
+        const pts = Math.max(64, 24 * k);   // enough samples/cycle at this k
+        ctx.beginPath();
+        for (let i = 0; i <= pts; i++) {
+          const t = i / pts * CYCLES;
+          const px = px3(t, z), py = py3(dispAmp[k] * Math.sin(2 * Math.PI * k * t), z);
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        if (aFlat >= 0.004) {
+          ctx.strokeStyle = isTop ? tg.color : INK;
+          ctx.lineWidth = isTop ? 1.4 : 1;
+          ctx.globalAlpha = aFlat;
+          ctx.stroke();
+        }
+        if (aLane >= 0.004) {
+          ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.globalAlpha = aLane;
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // partials past the lane cap (flat view only): faint, fading out in 3D
+      if (m < 1) {
+        let drawn = 0;
+        for (const k of laneKs) if (included(k)) drawn++;
+        const kFrom = laneKs.length ? laneKs[laneKs.length - 1] + 1 : 1;
+        for (let k = kFrom; k <= K_MAX && drawn < 16; k++) {
+          if (!included(k)) continue;
+          drawn++;
+          const isTop = k === topK;
+          ctx.strokeStyle = isTop ? tg.color : INK;
+          ctx.globalAlpha = (isTop ? 0.5 : 0.15) * (1 - m);
+          ctx.lineWidth = isTop ? 1.4 : 1;
+          const pts = Math.max(64, 24 * k);
+          ctx.beginPath();
+          for (let i = 0; i <= pts; i++) {
+            const t = i / pts * CYCLES;
+            const px = px3(t, 0), py = py3(dispAmp[k] * Math.sin(2 * Math.PI * k * t), 0);
+            i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+          }
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // dashed envelope through the stem tops: the coefficient decay
+      if (m > 0 && laneKs.length >= 3) {
+        ctx.strokeStyle = FAINT; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+        ctx.globalAlpha = 0.5 * m;
+        ctx.beginPath();
+        laneKs.forEach((k, s) => {
+          const z = (s + 1) / LANE_CAP;
+          const px = px3(CYCLES, z), py = py3(Math.abs(dispAmp[k]), z);
+          s ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+    }
+
+    // the partial sum, from the cached high-res buffer, on the front plane
+    ctx.strokeStyle = tg.color; ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    for (let i = 0; i <= WAVE_PTS; i++) {
+      const px = px3(i / WAVE_PTS * CYCLES, 0), py = py3(sumBuf[i], 0);
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.stroke();
+  });
+  panelFrame(r);
+  label("x(t) — sum of N sinusoids", r.x + 8, r.y + 6, INK);
+  label("t →  (2 cycles)", r.x + r.w - 10, r.y + r.h - 20, MUT, "right");
+}
+
+// ---- spectrum panel --------------------------------------------------------
+
+let hover = null;    // pointer pos in canvas coords
+let hoverK = null;   // hovered harmonic slot, resolved each draw
+
+function drawSpec() {
+  const r = R.spec, tg = TARGETS[state.target];
+  const px0 = R.px0, pw = R.pw;
+  const py0 = r.y + 22, baseY = r.y + r.h - 26, ph = baseY - py0;
+  const freqX = f => px0 + logF(f) * pw;
+  const dbY = db => baseY - (db - DB_FLOOR) / (DB_TOP - DB_FLOOR) * ph;
+  const n = specPow.length;
+  const xAt = i => px0 + i / (n - 1) * pw;
+
+  // stamp a magnitude spectrum from the eased amplitudes: each harmonic is a
+  // small window lobe, summed in power. On the log axis the low harmonics
+  // stand apart and the high ones bunch into a bright band — like a real
+  // analyzer looking at a saw.
+  specPow.fill(0);
+  const hw = LOBE_HW * (n - 1) / pw;
+  for (let k = 1; k <= K_MAX; k++) {
+    const a = dispAmp[k];
+    if (a === 0) continue;
+    const f = k * state.f0;
+    if (f < F_LO || f > F_HI) continue;
+    const cx = logF(f) * (n - 1);
+    const lo = Math.max(0, Math.ceil(cx - hw)), hi = Math.min(n - 1, Math.floor(cx + hw));
+    for (let px = lo; px <= hi; px++) {
+      const w = 0.5 * (1 + Math.cos(Math.PI * Math.abs(px - cx) / hw));
+      const v = Math.abs(a) * w;
+      specPow[px] += v * v;
+    }
+  }
+  const frac = p => {
+    const db = 10 * Math.log10(p + 1e-12);
+    return Math.min(1, Math.max(0, (db - DB_FLOOR) / (DB_TOP - DB_FLOOR)));
+  };
+
+  panelBase(r);
+  clipTo(r, () => {
+    // dB gridlines
+    ctx.font = "12px Menlo, Consolas, monospace";
+    for (let db = 0; db > DB_FLOOR; db -= 24) {
+      const y = dbY(db);
+      ctx.strokeStyle = db === 0 ? FAINT : GRID; ctx.lineWidth = 0.8;
+      ctx.setLineDash(db === 0 ? [4, 4] : []);
+      ctx.beginPath(); ctx.moveTo(px0, y); ctx.lineTo(px0 + pw, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = MUT; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      ctx.fillText(db === 0 ? "0dB" : String(db), px0 - 5, y);
+    }
+    // frequency gridlines
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const [f, lab] of [[100, "100"], [1000, "1k"], [10000, "10k"]]) {
+      const x = freqX(f);
+      ctx.strokeStyle = GRID; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(x, py0); ctx.lineTo(x, baseY); ctx.stroke();
+      ctx.fillStyle = MUT; ctx.fillText(lab, x, baseY + 6);
+    }
+    // baseline
+    ctx.strokeStyle = INK; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px0, baseY + 0.5); ctx.lineTo(px0 + pw, baseY + 0.5); ctx.stroke();
+
+    // the magnitude curve: filled area under a solid trace
+    ctx.beginPath();
+    ctx.moveTo(px0, baseY);
+    for (let i = 0; i < n; i++) ctx.lineTo(xAt(i), baseY - frac(specPow[i]) * ph);
+    ctx.lineTo(px0 + pw, baseY);
+    ctx.closePath();
+    ctx.fillStyle = tg.color; ctx.globalAlpha = 0.15; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = xAt(i), y = baseY - frac(specPow[i]) * ph;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = tg.color; ctx.lineWidth = 1.6; ctx.lineJoin = "round"; ctx.stroke();
+
+    // hover: mark the nearest harmonic and read out its frequency + level
+    if (hoverK !== null) {
+      const f = hoverK * state.f0, x = freqX(f);
+      const db = 20 * Math.log10(Math.abs(tg.coef(hoverK)));
+      const y = dbY(db);
+      ctx.fillStyle = tg.color;
+      ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.font = "13px Menlo, Consolas, monospace";
+      ctx.fillStyle = INK; ctx.textAlign = "right"; ctx.textBaseline = "top";
+      ctx.fillText(`k=${hoverK} · ${fmtHz(f)} · ${db.toFixed(1)}dB`.replace(/-/g, "−"),
+        r.x + r.w - 10, r.y + 8);
+    }
+  });
+  panelFrame(r);
+  label("spectrum", r.x + 8, r.y + 6, INK);
+}
+
+// ---- hover ------------------------------------------------------------------
+
+function resolveHover() {
+  hoverK = null;
+  if (!hover) return;
+  const r = R.spec;
+  if (hover.x < R.px0 || hover.x > R.px0 + R.pw) return;
+  if (hover.y < r.y || hover.y > r.y + r.h) return;
+  const freqX = f => R.px0 + logF(f) * R.pw;
+  let best = null, bestD = 10;
+  for (let k = 1; k <= K_MAX; k++) {
+    if (!included(k)) continue;
+    const d = Math.abs(hover.x - freqX(k * state.f0));
+    if (d < bestD) { bestD = d; best = k; }
+  }
+  hoverK = best;
+}
+
+cv.addEventListener("pointermove", e => {
+  const rect = cv.getBoundingClientRect();
+  hover = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+});
+cv.addEventListener("pointerleave", () => { hover = null; hoverK = null; });
+
+window.addEventListener("keydown", e => {
+  if (/^(INPUT|BUTTON)$/.test(e.target.tagName)) return;
+  const i = "123".indexOf(e.key);
+  if (i >= 0) { state.target = i; syncControls(); }
+  if (e.key === "ArrowRight") { e.preventDefault(); setN(state.n + 1); }
+  if (e.key === "ArrowLeft") { e.preventDefault(); setN(state.n - 1); }
+  if (e.key === "p" || e.key === "P") partialsBtn.click();
+  if (e.key === "d" || e.key === "D") viewBtn.click();
+});
+
+// ---- main loop -----------------------------------------------------------------
+
+function rebuildSum() {
+  if (!sumBuf) sumBuf = new Float64Array(WAVE_PTS + 1);
+  for (let i = 0; i <= WAVE_PTS; i++) {
+    const t = i / WAVE_PTS * CYCLES;
+    let v = 0;
+    for (let k = 1; k <= K_MAX; k++) if (dispAmp[k] !== 0) v += dispAmp[k] * Math.sin(2 * Math.PI * k * t);
+    sumBuf[i] = v;
+  }
+}
+
+function frame() {
+  // ease the drawn amplitudes toward the current series
+  const tg = TARGETS[state.target];
+  const ease = reducedMotion ? 1 : 0.25;
+  let moved = false;
+  for (let k = 1; k <= K_MAX; k++) {
+    const target = included(k) ? tg.coef(k) : 0;
+    const d = target - dispAmp[k];
+    if (Math.abs(d) > 1e-6) moved = true;
+    dispAmp[k] += d * ease;
+    if (Math.abs(dispAmp[k]) < 1e-4 && target === 0) dispAmp[k] = 0;
+  }
+  if (moved || !sumBuf) rebuildSum();
+
+  // ease the view mix; snap to exactly 0/1 so the flat view stays bit-exact
+  const vTarget = state.view3d ? 1 : 0;
+  viewMix += (vTarget - viewMix) * ease;
+  if (Math.abs(vTarget - viewMix) < 1e-3) viewMix = vTarget;
+
+  resolveHover();
+  ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
+  drawTime();
+  drawSpec();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---- sound ---------------------------------------------------------------
+// Additive synthesis via PeriodicWave: imag[k] = aₖ, exactly the stems on
+// screen. disableNormalization keeps loudness honest — adding a partial adds
+// exactly what the spectrum shows (so gain is 0.12: the square peaks ≈ 1.18).
+// This is the band-limited way to make a saw/square; a naive table-lookup
+// oscillator would alias (see waveshaping → 03 aliasing).
+
+var audio = null;
+var soundOn = false;
+const soundBtn = document.getElementById("soundbtn");
+
+function bakeWave(actx) {
+  const tg = TARGETS[state.target];
+  const real = new Float32Array(K_MAX + 1);
+  const imag = new Float32Array(K_MAX + 1);
+  for (let k = 1; k <= K_MAX; k++) {
+    if (included(k)) imag[k] = tg.coef(k);
+  }
+  return actx.createPeriodicWave(real, imag, { disableNormalization: true });
+}
+
+function updateAudio() {
+  if (!audio || !soundOn) return;
+  audio.osc.setPeriodicWave(bakeWave(audio.ctx));
+}
+
+function updateFreq() {
+  if (!audio || !soundOn) return;
+  audio.osc.frequency.setTargetAtTime(state.f0, audio.ctx.currentTime, 0.02);
+}
+
+function startAudio() {
+  if (!audio) {
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = actx.createOscillator();
+    osc.frequency.value = state.f0;
+    const dcblock = actx.createBiquadFilter();
+    dcblock.type = "highpass";
+    dcblock.frequency.value = 8;
+    const gain = actx.createGain();
+    gain.gain.value = 0;
+    osc.connect(dcblock).connect(gain).connect(actx.destination);
+    osc.setPeriodicWave(bakeWave(actx));
+    osc.start();
+    audio = { ctx: actx, osc, gain };
+  }
+  audio.ctx.resume();
+  audio.osc.setPeriodicWave(bakeWave(audio.ctx));
+  const t = audio.ctx.currentTime;
+  audio.osc.frequency.setTargetAtTime(state.f0, t, 0.02);
+  audio.gain.gain.cancelScheduledValues(t);
+  audio.gain.gain.setTargetAtTime(0.12, t, 0.02);
+}
+
+function stopAudio() {
+  if (!audio) return;
+  const t = audio.ctx.currentTime;
+  audio.gain.gain.cancelScheduledValues(t);
+  audio.gain.gain.setTargetAtTime(0, t, 0.02);
+  setTimeout(() => { if (!soundOn && audio) audio.ctx.suspend(); }, 250);
+}
+
+soundBtn.addEventListener("click", () => {
+  soundOn = !soundOn;
+  soundBtn.setAttribute("aria-pressed", String(soundOn));
+  soundOn ? startAudio() : stopAudio();
+});
+</script>
+</body>
+</html>
