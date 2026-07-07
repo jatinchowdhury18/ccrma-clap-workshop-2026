@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>waveshaping — even &amp; odd</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" onload="window.__renderMath && window.__renderMath()"></script>
+<style>
+  :root {
+    --ink: #1c2333;
+    --grid: #d7dce5;
+    --muted: #5a6372;
+    --faint: #9aa4b2;
+    --paper: #ffffff;
+    --page: #f2f3f0;
+    --even: #f6a600;
+    --odd: #2a9d8f;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--mono);
+    overflow: auto;
+  }
+  #stage {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    min-width: 780px;
+    min-height: 540px;
+  }
+  canvas { position: absolute; inset: 0; display: block; }
+
+  #title {
+    position: absolute;
+    left: 30px; top: 12px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    user-select: none;
+  }
+  #title span { color: var(--muted); }
+
+  #nav {
+    position: absolute;
+    top: 12px; right: 30px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    user-select: none;
+  }
+  #nav a { color: var(--muted); text-decoration: none; margin-left: 16px; }
+  #nav a:hover { color: var(--ink); }
+  #nav a.here { color: var(--ink); }
+
+  #controls {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    justify-content: safe center;
+    gap: 10px;
+    padding: 4px 2px;
+    min-width: 0;
+    overflow: hidden auto;
+  }
+  #controls > * { flex-shrink: 0; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  #math {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+    color: var(--ink);
+    padding: 4px 0;
+    overflow: auto hidden;
+  }
+  #math .katex-display { margin: 0; }
+  #math .katex-display > .katex { text-align: left; }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    color: var(--muted);
+    background: var(--paper);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    padding: 5px 10px 5px 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    line-height: 1;
+  }
+  .chip .dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--c);
+    opacity: 0.45;
+    flex: none;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--c);
+    box-shadow: inset 0 0 0 1px var(--c);
+  }
+  .chip[aria-pressed="true"] .dot { opacity: 1; }
+  .chip:focus-visible, #soundbtn:focus-visible, input[type=range]:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  .sliderrow { gap: 10px; flex-wrap: nowrap; }
+  .sliderrow label { font-size: 13.5px; color: var(--muted); min-width: 8ch; }
+  input[type=range] {
+    flex: 1 1 90px;
+    min-width: 40px;
+    max-width: 240px;
+    accent-color: var(--ink);
+    height: 18px;
+  }
+  .val {
+    font-size: 13.5px;
+    color: var(--ink);
+    min-width: 6ch;
+    text-align: right;
+  }
+
+  #soundbtn {
+    background: var(--paper);
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    width: 42px; height: 26px;
+    cursor: pointer;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin-left: 6px;
+  }
+  #soundbtn:hover { border-color: var(--muted); }
+  #soundbtn[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+  #soundbtn svg { display: block; }
+
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="title">waveshaping <span>— even &amp; odd</span></div>
+  <div id="nav">
+    <a href="01-transfer-curve.html">01 transfer</a>
+    <a href="02-harmonics.html">02 harmonics</a>
+    <a href="03-imperfection-decomposer.html" class="here">03 even/odd</a>
+    <a href="04-aliasing.html">04 aliasing</a>
+  </div>
+  <div id="controls">
+    <div id="math" aria-live="polite"></div>
+    <div class="row sliderrow">
+      <label for="pos">spike a</label>
+      <input id="pos" type="range" min="0.15" max="0.85" step="0.01" value="0.5">
+      <span class="val" id="posval">0.50</span>
+    </div>
+    <div class="row sliderrow">
+      <label for="hgt">height h</label>
+      <input id="hgt" type="range" min="-0.6" max="0.6" step="0.01" value="0">
+      <span class="val" id="hgtval">+0.00</span>
+    </div>
+    <div class="row sliderrow">
+      <label for="twin">twin m</label>
+      <input id="twin" type="range" min="-1" max="1" step="0.01" value="0">
+      <span class="val" id="twinval">+0.00</span>
+    </div>
+    <div class="row">
+      <button id="mirbtn" class="chip" aria-pressed="true" title="mirror test"
+        style="--c: var(--even);"><span class="dot"></span>g(−x)</button>
+      <button id="negbtn" class="chip" aria-pressed="false" title="point-reflection test"
+        style="--c: var(--odd);"><span class="dot"></span>−g(−x)</button>
+      <button id="soundbtn" aria-pressed="false" aria-label="sound" title="sound">
+        <svg width="18" height="16" viewBox="0 0 20 16" fill="none" stroke="currentColor"
+          stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 6v4h3l4 3.5v-11L5 6H2z" fill="currentColor" stroke="none"/>
+          <path d="M12.5 5.5a4.2 4.2 0 0 1 0 5"/>
+          <path d="M15.2 3.5a7.5 7.5 0 0 1 0 9"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const INK = "#1c2333", GRID = "#d7dce5", FAINT = "#9aa4b2", MUT = "#5a6372";
+const EVEN = "#f6a600", ODD = "#2a9d8f";
+
+const SIG = 0.11;                    // spike width
+const KMAX = 15;                     // harmonics shown
+const NDFT = 1024;                   // samples of one period for the DFT
+const DB_TOP = 12, DB_FLOOR = -60;
+const Y_LO = -1.75, Y_HI = 1.75;     // amplitude range of curve & even panels (symmetric: x-axis sits mid-panel)
+const ODD_Y = 0.8;                   // amplitude range of the odd panel (±, also symmetric)
+
+const state = {
+  a: 0.5,        // spike position
+  h: 0,          // spike height: start with no imperfection — g is the bare parabola
+  m: 0,          // twin: -1 inverted, 0 none, +1 matched
+  mir: true,     // overlay g(-x)
+  neg: false,    // overlay -g(-x)
+};
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const G = u => Math.exp(-(u * u) / (SIG * SIG));
+const gFn = x => x * x + state.h * (G(x - state.a) + state.m * G(x + state.a));
+const evFn = x => (gFn(x) + gFn(-x)) / 2;
+const odFn = x => (gFn(x) - gFn(-x)) / 2;
+
+const stage = document.getElementById("stage");
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const controls = document.getElementById("controls");
+const posEl = document.getElementById("pos");
+const posVal = document.getElementById("posval");
+const hgtEl = document.getElementById("hgt");
+const hgtVal = document.getElementById("hgtval");
+const twinEl = document.getElementById("twin");
+const twinVal = document.getElementById("twinval");
+const mirBtn = document.getElementById("mirbtn");
+const negBtn = document.getElementById("negbtn");
+
+let dirty = true;
+
+const fmt = v => (v < 0 ? "−" : "+") + Math.abs(v).toFixed(2);
+
+// ---- controls ----------------------------------------------------------
+
+posEl.addEventListener("input", () => { state.a = parseFloat(posEl.value); dirty = true; syncControls(); });
+hgtEl.addEventListener("input", () => { state.h = parseFloat(hgtEl.value); dirty = true; syncControls(); });
+twinEl.addEventListener("input", () => { state.m = parseFloat(twinEl.value); dirty = true; syncControls(); });
+
+mirBtn.addEventListener("click", () => { state.mir = !state.mir; syncControls(); });
+negBtn.addEventListener("click", () => { state.neg = !state.neg; syncControls(); });
+
+const mathEl = document.getElementById("math");
+const TEX = "g_e(x)=\\tfrac{g(x)+g(-x)}{2}\\qquad g_o(x)=\\tfrac{g(x)-g(-x)}{2}";
+const PLAIN = "gₑ(x) = (g(x)+g(−x))/2    gₒ(x) = (g(x)−g(−x))/2";
+function renderMath() {
+  if (window.katex) katex.render(TEX, mathEl, { displayMode: true, throwOnError: false });
+  else mathEl.textContent = PLAIN;
+}
+window.__renderMath = renderMath;
+renderMath();
+
+function syncControls() {
+  posEl.value = state.a;
+  hgtEl.value = state.h;
+  twinEl.value = state.m;
+  posVal.textContent = state.a.toFixed(2);
+  hgtVal.textContent = fmt(state.h);
+  twinVal.textContent = fmt(state.m);
+  mirBtn.setAttribute("aria-pressed", String(state.mir));
+  negBtn.setAttribute("aria-pressed", String(state.neg));
+  updateAudio();
+}
+syncControls();
+
+// ---- sound ---------------------------------------------------------------
+// The audio path mirrors the page: sine oscillator -> WaveShaperNode holding
+// g(x) -> DC blocker -> gain. Matched twin: the odd family drops out audibly.
+
+var audio = null;    // var: hoisted, so the syncControls() call above the
+var soundOn = false; // sound module can safely hit updateAudio's guard
+const soundBtn = document.getElementById("soundbtn");
+
+function bakeCurve() {
+  const N = 2049;
+  const curve = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const x = -1 + 2 * i / (N - 1);
+    curve[i] = Math.max(-2, Math.min(2, gFn(x)));
+  }
+  return curve;
+}
+
+function updateAudio() {
+  if (!audio || !soundOn) return;
+  audio.shaper.curve = bakeCurve();
+}
+
+function startAudio() {
+  if (!audio) {
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = actx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = 110;
+    const shaper = actx.createWaveShaper();
+    shaper.oversample = "4x";
+    const dcblock = actx.createBiquadFilter();
+    dcblock.type = "highpass";
+    dcblock.frequency.value = 8;
+    const gain = actx.createGain();
+    gain.gain.value = 0;
+    osc.connect(shaper).connect(dcblock).connect(gain).connect(actx.destination);
+    osc.start();
+    audio = { ctx: actx, osc, shaper, gain };
+  }
+  audio.ctx.resume();
+  audio.shaper.curve = bakeCurve();
+  const t = audio.ctx.currentTime;
+  audio.gain.gain.cancelScheduledValues(t);
+  audio.gain.gain.setTargetAtTime(0.15, t, 0.02);
+}
+
+function stopAudio() {
+  if (!audio) return;
+  const t = audio.ctx.currentTime;
+  audio.gain.gain.cancelScheduledValues(t);
+  audio.gain.gain.setTargetAtTime(0, t, 0.02);
+  setTimeout(() => { if (!soundOn && audio) audio.ctx.suspend(); }, 250);
+}
+
+soundBtn.addEventListener("click", () => {
+  soundOn = !soundOn;
+  soundBtn.setAttribute("aria-pressed", String(soundOn));
+  soundOn ? startAudio() : stopAudio();
+});
+
+// ---- layout ------------------------------------------------------------
+
+let R = null;
+
+function layout() {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  cv.style.width = W + "px";
+  cv.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const pad = 30, top = 44, gap = 28, halfGap = 14;
+  const availH = H - top - pad - gap;
+  const availW = W - 2 * pad - gap;
+  let S = Math.floor(Math.min(0.55 * availH, 0.48 * availW));
+  S = Math.max(250, S);
+  const botH = Math.max(150, availH - S);
+  const outW = Math.max(210, availW - S);
+  const halfW = Math.floor((outW - halfGap) / 2);
+
+  R = {
+    curve: { x: pad, y: top, w: S, h: S },
+    even:  { x: pad + S + gap, y: top, w: halfW, h: S },
+    odd:   { x: pad + S + gap + halfW + halfGap, y: top, w: outW - halfW - halfGap, h: S },
+    spec:  { x: pad + S + gap, y: top + S + gap, w: outW, h: botH },
+    ctrl:  { x: pad, y: top + S + gap, w: S, h: botH },
+  };
+
+  controls.style.left = R.ctrl.x + "px";
+  controls.style.top = R.ctrl.y + "px";
+  controls.style.width = R.ctrl.w + "px";
+  controls.style.height = R.ctrl.h + "px";
+}
+window.addEventListener("resize", layout);
+layout();
+
+// ---- spectrum ----------------------------------------------------------
+
+const ampDb = new Float64Array(KMAX + 1);  // exact dB per harmonic (hover readout)
+const target = new Float64Array(KMAX + 1); // bar height fraction
+const disp = new Float64Array(KMAX + 1);   // smoothed display
+let dcValue = 0;
+
+function computeSpectrum() {
+  const y = new Float64Array(NDFT);
+  let mean = 0;
+  for (let n = 0; n < NDFT; n++) {
+    y[n] = gFn(Math.sin(2 * Math.PI * n / NDFT));
+    mean += y[n];
+  }
+  mean /= NDFT;
+  dcValue = mean;
+  for (let k = 0; k <= KMAX; k++) {
+    let re = 0, im = 0;
+    for (let n = 0; n < NDFT; n++) {
+      const ph = 2 * Math.PI * k * n / NDFT;
+      re += y[n] * Math.cos(ph);
+      im += y[n] * Math.sin(ph);
+    }
+    const amp = k === 0 ? Math.abs(mean) : 2 * Math.hypot(re, im) / NDFT;
+    ampDb[k] = 20 * Math.log10(Math.max(amp, 1e-12));
+    target[k] = Math.min(1, Math.max(0, (ampDb[k] - DB_FLOOR) / (DB_TOP - DB_FLOOR)));
+  }
+}
+
+// ---- drawing -----------------------------------------------------------
+
+function panelBase(r) {
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+}
+function panelFrame(r) {
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+}
+function clipTo(r, fn) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.clip();
+  fn();
+  ctx.restore();
+}
+function label(text, x, y, color = INK, align = "left") {
+  ctx.font = "13px Menlo, Consolas, monospace";
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = "top";
+  ctx.fillText(text, x, y);
+}
+
+const xOf = (r, x) => r.x + (x + 1) / 2 * r.w;                       // x in [-1,1] -> px
+const mapY = (r, lo, hi) => v => r.y + (hi - v) / (hi - lo) * r.h;   // v in [lo,hi] -> px
+
+function plot(r, fn, toY, color, width, dash) {
+  const N = Math.max(160, Math.round(r.w));
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const x = -1 + 2 * i / N;
+    const px = xOf(r, x), py = toY(fn(x));
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  }
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.setLineDash(dash || []);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function axesTicks(r, toY, ticks) {
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(xOf(r, 0), r.y); ctx.lineTo(xOf(r, 0), r.y + r.h);
+  ctx.moveTo(r.x, toY(0)); ctx.lineTo(r.x + r.w, toY(0));
+  ctx.stroke();
+  if (!ticks) return;
+  ctx.beginPath();
+  for (const t of [-1, -0.5, 0.5, 1]) {
+    ctx.moveTo(xOf(r, t), toY(0) - 4); ctx.lineTo(xOf(r, t), toY(0) + 4);
+  }
+  for (const t of [-1.5, -1, -0.5, 0.5, 1, 1.5]) {
+    if (toY(t) > r.y && toY(t) < r.y + r.h) {
+      ctx.moveTo(xOf(r, 0) - 4, toY(t)); ctx.lineTo(xOf(r, 0) + 4, toY(t));
+    }
+  }
+  ctx.stroke();
+}
+
+const handlePos = () => ({ x: xOf(R.curve, state.a), y: mapY(R.curve, Y_LO, Y_HI)(gFn(state.a)) });
+
+function drawCurve() {
+  const r = R.curve;
+  const toY = mapY(r, Y_LO, Y_HI);
+  panelBase(r);
+  clipTo(r, () => {
+    axesTicks(r, toY, true);
+
+    // ±a markers
+    ctx.font = "12px Menlo, Consolas, monospace";
+    ctx.fillStyle = MUT;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("+a", xOf(r, state.a), r.y + r.h - 8);
+    ctx.fillText("−a", xOf(r, -state.a), r.y + r.h - 8);
+
+    if (state.mir) plot(r, x => gFn(-x), toY, EVEN, 1.6, [6, 5]);
+    if (state.neg) plot(r, x => -gFn(-x), toY, ODD, 1.6, [2, 4]);
+    plot(r, gFn, toY, INK, 2.8);
+
+    // spike handle: draggable (x -> a, y -> h)
+    const hp = handlePos();
+    ctx.fillStyle = INK;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(hp.x, hp.y, 5, 0, 7); ctx.fill(); ctx.stroke();
+  });
+  panelFrame(r);
+  label("g(x)", r.x + 8, r.y + 6, INK);
+}
+
+function drawEven() {
+  const r = R.even;
+  const toY = mapY(r, Y_LO, Y_HI);
+  panelBase(r);
+  clipTo(r, () => {
+    axesTicks(r, toY, false);
+    plot(r, x => x * x, toY, FAINT, 1, [2, 4]);   // base parabola ghost
+    plot(r, evFn, toY, EVEN, 2.2);
+  });
+  panelFrame(r);
+  label("even half", r.x + 8, r.y + 6, INK);
+}
+
+function drawOdd() {
+  const r = R.odd;
+  const toY = mapY(r, -ODD_Y, ODD_Y);
+  panelBase(r);
+  clipTo(r, () => {
+    axesTicks(r, toY, false);
+    plot(r, odFn, toY, ODD, 2.2);
+  });
+  panelFrame(r);
+  label("odd half", r.x + 8, r.y + 6, INK);
+}
+
+let hover = null; // pointer pos in canvas coords
+
+function drawSpectrum() {
+  const r = R.spec;
+  panelBase(r);
+
+  const leftInset = 34, labelStrip = 18, topInset = 8;
+  const px0 = r.x + leftInset, pw = r.w - leftInset - 10;
+  const py0 = r.y + topInset, ph = r.h - topInset - labelStrip - 6;
+  const baseY = py0 + ph;
+  const kX = k => px0 + (k + 0.5) / (KMAX + 1) * pw;
+  const slotW = pw / (KMAX + 1);
+  const dbY = db => baseY - (db - DB_FLOOR) / (DB_TOP - DB_FLOOR) * ph;
+
+  // dB gridlines
+  for (let db = 0; db > DB_FLOOR; db -= 12) {
+    const py = dbY(db);
+    ctx.beginPath();
+    ctx.strokeStyle = db === 0 ? FAINT : GRID;
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash(db === 0 ? [4, 4] : []);
+    ctx.moveTo(px0, py);
+    ctx.lineTo(px0 + pw, py);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (db === 0 || db === -24 || db === -48) {
+      ctx.font = "12px Menlo, Consolas, monospace";
+      ctx.fillStyle = MUT;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillText(db === 0 ? "0dB" : String(db), px0 - 5, py);
+    }
+  }
+
+  // hover: nearest harmonic slot
+  let hoverK = null;
+  if (hover && hover.x >= px0 && hover.x <= px0 + pw && hover.y >= py0 && hover.y <= baseY + labelStrip) {
+    const k = Math.round((hover.x - px0) / pw * (KMAX + 1) - 0.5);
+    if (k >= 0 && k <= KMAX) hoverK = k;
+  }
+  if (hoverK !== null) {
+    ctx.fillStyle = "rgba(28,35,51,0.07)";
+    ctx.fillRect(kX(hoverK) - slotW / 2, py0, slotW, ph);
+  }
+
+  // bars: dc muted, odd teal, even amber — the two families of the lesson
+  const bw = Math.min(26, slotW * 0.5);
+  for (let k = 0; k <= KMAX; k++) {
+    const bh = disp[k] * ph;
+    if (bh < 0.5) continue;
+    ctx.fillStyle = k === 0 ? MUT : k % 2 ? ODD : EVEN;
+    ctx.fillRect(kX(k) - bw / 2, baseY - bh, bw, bh);
+  }
+
+  // number labels
+  const every = slotW >= 15 ? 1 : 2;
+  for (let k = 0; k <= KMAX; k++) {
+    if (k === 0 || k % every === (every === 2 ? 1 : 0)) {
+      ctx.font = "12px Menlo, Consolas, monospace";
+      ctx.fillStyle = k === 0 ? INK : k % 2 ? INK : MUT;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(k === 0 ? "dc" : String(k), kX(k), baseY + 5);
+    }
+  }
+
+  // baseline
+  ctx.beginPath();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1;
+  ctx.moveTo(px0, baseY + 0.5);
+  ctx.lineTo(px0 + pw, baseY + 0.5);
+  ctx.stroke();
+
+  // hover readout
+  if (hoverK !== null) {
+    let text;
+    if (hoverK === 0) text = `dc = ${fmt(dcValue)}`;
+    else text = ampDb[hoverK] <= DB_FLOOR + 0.01 ? `k=${hoverK}  —` : `k=${hoverK}  ${ampDb[hoverK].toFixed(1)}dB`;
+    ctx.font = "13px Menlo, Consolas, monospace";
+    ctx.fillStyle = INK;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "top";
+    ctx.fillText(text.replace(/-/g, "−"), r.x + r.w - 10, r.y + 8);
+  }
+
+  panelFrame(r);
+  label("spectrum (dB)", r.x + 8, r.y + 6, INK);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
+  drawCurve();
+  drawEven();
+  drawOdd();
+  drawSpectrum();
+}
+
+// ---- spike dragging ------------------------------------------------------
+
+let dragging = false;
+
+const pt = e => {
+  const rect = cv.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+};
+const nearHandle = p => {
+  const hp = handlePos();
+  return Math.hypot(p.x - hp.x, p.y - hp.y) < 16;
+};
+
+cv.addEventListener("pointerdown", e => {
+  const p = pt(e);
+  if (nearHandle(p)) {
+    dragging = true;
+    cv.setPointerCapture(e.pointerId);
+    cv.style.cursor = "grabbing";
+  }
+});
+cv.addEventListener("pointermove", e => {
+  const p = pt(e);
+  hover = p;
+  if (dragging) {
+    const r = R.curve;
+    const xv = (p.x - r.x) / r.w * 2 - 1;
+    const yv = Y_HI - (p.y - r.y) / r.h * (Y_HI - Y_LO);
+    state.a = Math.min(0.85, Math.max(0.15, xv));
+    state.h = Math.min(0.6, Math.max(-0.6, yv - state.a * state.a));
+    dirty = true;
+    syncControls();
+    return;
+  }
+  cv.style.cursor = nearHandle(p) ? "grab" : "";
+});
+cv.addEventListener("pointerup", () => {
+  dragging = false;
+  cv.style.cursor = hover && nearHandle(hover) ? "grab" : "";
+});
+cv.addEventListener("pointerleave", () => { hover = null; });
+
+// ---- main loop -----------------------------------------------------------
+
+function frame() {
+  if (dirty) {
+    computeSpectrum();
+    dirty = false;
+  }
+  const k = reducedMotion ? 1 : 0.25;
+  for (let i = 0; i <= KMAX; i++) {
+    disp[i] += (target[i] - disp[i]) * k;
+  }
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
