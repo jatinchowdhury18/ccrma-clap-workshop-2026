@@ -1,0 +1,25 @@
+[workspace]
+members  = ["xtask"]
+resolver = "2"
+
+[workspace.package]
+version = "1.0.0"
+
+[package]
+name    = "delay-plugin"
+version.workspace = true
+edition = "2021"
+
+[lib]
+name       = "delay_plugin"
+crate-type = ["cdylib"]
+path       = "plugin.rs"
+
+[dependencies]
+clap-sys = "0.5"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
