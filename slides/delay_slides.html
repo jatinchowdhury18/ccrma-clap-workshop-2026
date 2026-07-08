@@ -1,0 +1,2101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>delay lines — slides</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$',  right: '$',  display: false },
+          ],
+          throwOnError: false,
+        })"></script>
+<style>
+  :root {
+    --ink: #1c2333;
+    --grid: #d7dce5;
+    --muted: #5a6372;
+    --faint: #9aa4b2;
+    --page: #f7f7f4;
+    --accent: #e4572e;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--mono);
+    overflow: auto;
+  }
+
+  #deck {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    min-width: 780px;
+    min-height: 560px;
+  }
+  .slide {
+    position: absolute;
+    inset: 0;
+    visibility: hidden;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    padding: 40px 72px 36px;
+    gap: 18px;
+  }
+  .slide.active { visibility: visible; pointer-events: auto; }
+
+  /* fragments: [data-step] elements stay hidden until revealed. visibility
+     keeps the layout, so nothing reflows on reveal (like beamer's \pause).
+     the reveal is scoped to .slide.active: an explicit visibility:visible on
+     a child would otherwise override its hidden (non-active) slide and leak
+     onto other slides */
+  .frag { visibility: hidden; opacity: 0; transition: opacity 0.3s; }
+  .slide.active .frag.on { visibility: visible; opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .frag { transition: none; } }
+
+  .stitle {
+    font-size: 26px;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    user-select: none;
+  }
+  .stitle span { color: var(--muted); }
+
+  .bullets { list-style: none; max-width: 80ch; }
+  .bullets li {
+    font-size: 16px;
+    line-height: 1.8;
+    color: var(--ink);
+    padding-left: 2ch;
+    position: relative;
+  }
+  .bullets li::before { content: "–"; position: absolute; left: 0; color: var(--faint); }
+  .bullets li.soon { color: var(--faint); }
+  .bullets li.soon::before { content: ""; }
+
+  /* KaTeX sits in monospace body text; nudge it to match the line's optical size */
+  .katex { font-size: 1.05em; }
+  /* display math inside a bullet: keep the default 1em margins from opening a gap */
+  .bullets .katex-display { margin: 0.3em 0; }
+
+  /* widgets sit in the slide like figures: no frame, no panel background */
+  .widget { position: relative; }
+  .widget canvas { position: absolute; inset: 0; display: block; }
+  .fig-queue {
+    align-self: center;
+    width: min(880px, 100%);
+    height: 200px;
+    margin-top: 8px;
+  }
+  .fig-ring { width: 100%; height: 350px; }
+  .fig-fffb { width: 100%; flex: 1 1 auto; min-height: 340px; max-height: 560px; }
+  .fig-frac { width: 100%; flex: 1 1 auto; min-height: 280px; max-height: 480px; }
+  /* the expanded-weights line: four cubics only fit at a slightly smaller size */
+  .bullets li.tight { font-size: 14px; }
+  /* equation captions overlaid on the fffb figure; z-index keeps them above the
+     canvas, which is appended to the container after them at runtime */
+  .fcap {
+    position: absolute; left: 0; right: 0;
+    height: 30px;
+    text-align: center;
+    font-size: 17px; color: var(--ink);
+    pointer-events: none; user-select: none;
+    z-index: 1;
+  }
+  /* display math brings 1em vertical margins; the caption band has no room for them */
+  .fcap .katex-display { margin: 0; }
+
+  /* two-column body: figure + its controls on the left, code on the right */
+  .cols { flex: 1; display: flex; gap: 44px; min-height: 0; align-items: center; }
+  .colL { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+
+  pre.code {
+    flex: 0 0 470px;
+    max-height: 100%;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    padding: 4px 0 4px 22px;
+    border-left: 2px solid var(--grid);
+    color: var(--ink);
+    overflow: auto;
+  }
+  pre.code .cap { color: var(--muted); font-size: 12px; }
+  pre.code .cm { color: var(--faint); }
+  pre.code .hl { color: var(--accent); }
+  @media (max-width: 1120px) {
+    .cols { flex-direction: column; align-items: stretch; overflow: hidden auto; }
+    .fig-ring { height: 300px; }
+    pre.code { flex: 0 0 auto; border-left: none; padding-left: 0; }
+  }
+
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .wctl { justify-content: center; gap: 10px; }
+  .wctl label { font-size: 13px; color: var(--muted); min-width: 3ch; text-align: right; }
+  input[type=range] {
+    flex: 0 1 180px;
+    accent-color: var(--accent);
+    height: 18px;
+  }
+  .val {
+    font-size: 13px;
+    color: var(--muted);
+    min-width: 10ch;
+  }
+
+  .iconbtn {
+    background: transparent;
+    border: 1px solid var(--grid);
+    border-radius: 3px;
+    width: 42px; height: 26px;
+    cursor: pointer;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .iconbtn:hover { border-color: var(--muted); }
+  .iconbtn[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .iconbtn svg { display: block; }
+  .iconbtn.wide { width: auto; padding: 0 12px; font-family: var(--mono); font-size: 12px; }
+  .iconbtn:focus-visible, input[type=range]:focus-visible, #nav a:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  #nav {
+    position: absolute;
+    top: 14px; right: 30px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    user-select: none;
+    color: var(--muted);
+  }
+  #nav a { color: var(--muted); text-decoration: none; cursor: pointer; margin: 0 10px; }
+  #nav a:hover { color: var(--ink); }
+</style>
+</head>
+<body>
+<div id="deck">
+
+  <!-- 1 ------------------------------------------------------------------ -->
+  <section class="slide" data-widget="queue">
+    <div class="stitle">what's a delay line?</div>
+    <div class="widget fig-queue"></div>
+    <div class="row wctl">
+      <button id="q-play" class="iconbtn" aria-pressed="true" aria-label="play/pause" title="play/pause (space)">
+        <svg class="ic-play" width="14" height="14" viewBox="0 0 14 14"><path d="M3.5 2l8 5-8 5z" fill="currentColor"/></svg>
+        <svg class="ic-pause" width="14" height="14" viewBox="0 0 14 14"><path d="M3 2h2.8v10H3zM8.2 2H11v10H8.2z" fill="currentColor"/></svg>
+      </button>
+      <button id="q-step" class="iconbtn" aria-label="step one sample" title="step one sample (.)">
+        <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 2l7 5-7 5z" fill="currentColor"/><path d="M10.5 2H12v10h-1.5z" fill="currentColor"/></svg>
+      </button>
+      <label for="q-n">n</label>
+      <input id="q-n" type="range" min="4" max="16" step="1" value="8">
+      <span class="val" id="q-nval">8 samples</span>
+    </div>
+    <ul class="bullets">
+      <li>The delay line is a simple and incredibly fun sound design tool.</li>
+      <li data-step>It's a queue. First in, first out. You push a new sample in one end, and pop the oldest sample out the other. </li>
+    </ul>
+  </section>
+
+  <!-- 2 ------------------------------------------------------------------ -->
+  <section class="slide" data-widget="ring">
+    <div class="stitle">delay lines in practice</div>
+    <ul class="bullets">
+      <li>In practice, we don't "move all samples from left to right". </li>
+      <li data-step>Instead, we use a <b>ring buffer</b>. </li>
+      <li data-step>The buffer has a <b>read head</b> and a <b>write head</b>.</li>
+      <li data-step>The read head "trails" the write head by $d$ samples, where $d \leq n$.</li>
+      <li data-step>Notice that we could have multiple read heads in multiple positions... which is cool!</li>
+    </ul>
+    <div class="cols">
+      <div class="colL">
+        <div class="widget fig-ring"></div>
+        <div class="row wctl">
+          <button id="r-play" class="iconbtn" aria-pressed="true" aria-label="play/pause" title="play/pause (space)">
+            <svg class="ic-play" width="14" height="14" viewBox="0 0 14 14"><path d="M3.5 2l8 5-8 5z" fill="currentColor"/></svg>
+            <svg class="ic-pause" width="14" height="14" viewBox="0 0 14 14"><path d="M3 2h2.8v10H3zM8.2 2H11v10H8.2z" fill="currentColor"/></svg>
+          </button>
+          <button id="r-step" class="iconbtn" aria-label="step one sample" title="step one sample (.)">
+            <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 2l7 5-7 5z" fill="currentColor"/><path d="M10.5 2H12v10h-1.5z" fill="currentColor"/></svg>
+          </button>
+          <label for="r-d">delay</label>
+          <input id="r-d" type="range" min="1" max="15" step="1" value="5">
+          <span class="val" id="r-dval">5 samples</span>
+        </div>
+      </div>
+      <pre class="code" data-step><span class="cap">ring buffer — c</span>
+
+#define DELAY_MAX 48000   <span class="cm">// 1 second at 48 kHz</span>
+
+typedef struct {
+   float    buf[DELAY_MAX];
+   uint32_t w;            <span class="cm">// write index</span>
+} DelayLine;
+
+static float delay_process(DelayLine *d, float in,
+                            uint32_t delay_samples) {
+   <span class="cm">// write the newest sample</span>
+   d-&gt;buf[d-&gt;w] = in;
+
+   <span class="cm">// read the sample written delay_samples steps ago</span>
+   const uint32_t r =
+      <span class="hl">(d-&gt;w + DELAY_MAX - delay_samples) % DELAY_MAX</span>;
+   const float out = d-&gt;buf[r];
+
+   d-&gt;w = <span class="hl">(d-&gt;w + 1) % DELAY_MAX</span>;  <span class="cm">// advance and wrap</span>
+   return out;
+}</pre>
+    </div>
+  </section>
+
+  <!-- 3 ------------------------------------------------------------------ -->
+  <section class="slide" data-widget="fffb">
+    <div class="stitle">feedforward vs feedback</div>
+    <ul class="bullets">
+      <li>Feedforward delays just delay the signal by some number of samples.
+        <ul class="bullets">
+          <!-- <li>Reverbs use multitap feedfoward delays for early reflections.</li>
+          <li>Chorus, flanger, and vibrato effects all use feedforward delays.</li> -->
+
+        </ul>
+        
+      </li>
+      <li data-step>Feedback delays have a feedback path, in which the output of the delay line is fed back into the input <ul class="bullets">
+        <!-- <li>Iconic delay effects like tape echo, dub delay, every pedal ever, etc are all FB delays.</li>
+        <li>Waveguide modeling is (in a sense) advanced feedback delay wizardry.</li> -->
+      </ul></li>
+    </ul>
+    <div class="widget fig-fffb" data-step="2">
+      <div class="fcap" style="top: 0;">$$y[n] = x[n-D]$$</div>
+      <div class="fcap" style="top: 50%;">$$y[n] = x[n-D] + g\,y[n-D]$$</div>
+    </div>
+    <div class="row wctl" data-step="2">
+      <button id="f-play" class="iconbtn" aria-pressed="true" aria-label="play/pause" title="play/pause (space)">
+        <svg class="ic-play" width="14" height="14" viewBox="0 0 14 14"><path d="M3.5 2l8 5-8 5z" fill="currentColor"/></svg>
+        <svg class="ic-pause" width="14" height="14" viewBox="0 0 14 14"><path d="M3 2h2.8v10H3zM8.2 2H11v10H8.2z" fill="currentColor"/></svg>
+      </button>
+      <button id="f-step" class="iconbtn" aria-label="step one sample" title="step one sample (.)">
+        <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 2l7 5-7 5z" fill="currentColor"/><path d="M10.5 2H12v10h-1.5z" fill="currentColor"/></svg>
+      </button>
+      <label for="f-g">g</label>
+      <input id="f-g" type="range" min="0" max="3" step="0.05" value="0.7">
+      <span class="val" id="f-gval">0.70</span>
+      <span class="val">D = 4</span>
+    </div>
+  </section>
+
+  <!-- 4 ------------------------------------------------------------------ -->
+  <section class="slide">
+    <div class="stitle">where's the complexity?</div>
+    <ul class="bullets">
+      <li>two things make delays interesting:</li>
+      <li data-step>sample interpolation</li>
+      <li data-step>time-varying length</li>
+    </ul>
+  </section>
+
+  <!-- 5 ------------------------------------------------------------------ -->
+  <section class="slide" data-widget="frac">
+    <div class="stitle">fractional delay </div>
+    <ul class="bullets">
+      <li>$D$ has been a whole number of samples. In practice, we rarely want a whole number of samples.</li>
+      <li data-step>Tuning: A delay tuned to frequency $f$ needs $D = f_s/f$; rarely an integer especially for large $f$</li>
+      <li data-step>Many effects, e.g., chorus, flanger, and vibrato modulate $D$ smoothly</li>
+      <li data-step>But the buffer only has samples at integer positions. We have to <i>interpolate.</i></li>
+    </ul>
+    <div class="widget fig-frac"></div>
+    <div class="row wctl">
+      <label for="p-d">D</label>
+      <input id="p-d" type="range" min="1" max="12" step="0.05" value="6.3">
+      <span class="val" id="p-dval">D = 6.30</span>
+    </div>
+  </section>
+
+  <!-- 6 ------------------------------------------------------------------ -->
+  <section class="slide" data-widget="lerp">
+    <div class="stitle">fractional delay <span>— linear interpolation</span></div>
+    <ul class="bullets">
+      <li>Simple and effective! Just sample a line between the two nearest points.</li>
+      <li data-step>With $D = i + f$ (integer part $i$, fraction $f$): $\;\hat{x}[n-D] = (1-f)\,x[n-i] + f\,x[n-i-1]$.</li>
+      <li data-step>However, it's imperfect, and induces a lowpass effect.</li>
+    </ul>
+    <div class="widget fig-frac"></div>
+    <div class="row wctl">
+      <label for="l-d">D</label>
+      <input id="l-d" type="range" min="1" max="12" step="0.05" value="6.3">
+      <span class="val" id="l-dval">D = 6.30</span>
+    </div>
+  </section>
+
+  <!-- 7 ------------------------------------------------------------------ -->
+  <section class="slide" data-widget="interp">
+    <div class="stitle">lagrange interpolation</div>
+    <ul class="bullets">
+      <li><b>Fact: </b> $P+1$ points uniquely define a degree-$P$ polynomial through them.</li>
+      <li data-step>Each known sample is a <b>position</b> paired with a <b>value</b>. </li>
+      <li data-step>Put the $P+1$ samples at integer positions $0, 1, \dots, P$, with values $a_0, \dots, a_P$. For each sample position $m$, define the basis polynomial $\ell_m$:
+        $$\ell_m(t) \;=\; \prod_{\substack{j = 0 \\ j \neq m}}^{P} \frac{t - j}{m - j}
+        \qquad \text{so at every integer position } k: \qquad
+        \ell_m(k) = \begin{cases} 1 & k = m \\ 0 & k \neq m \end{cases}$$ 
+      </li>
+      <li data-step>$\ell_m$ is 1 at its own position $m$ and 0 at all the other positions. So scaling each $\ell_m$ by its value $a_m$ and summing gives a polynomial that hits every sample exactly:
+        $$p(t) \;=\; \sum_{m=0}^{P} a_m\,\ell_m(t)$$
+      </li>
+      <li data-step>Evaluate $p$ at the <b>read position</b> $t$ to get the interpolated value. </li>
+      <li data-step>Linear interpolation is Lagrange interpolation for $P{=}1$.</li>
+    </ul>
+    <div class="widget fig-frac"></div>
+  </section>
+
+  <!-- 8 ------------------------------------------------------------------ -->
+  <section class="slide" data-widget="lagrange">
+    <div class="stitle">lagrange interpolation</div>
+    <ul class="bullets">
+      <li>We want $x[D]$ where $D = i + f$ (where $i\in\mathbb{Z}$ and $0 \leq f < 1$)</li>
+      <li>For cubic interpolation, we select the samples to the left and right of $i + f$. Those are: $x[i - 1]$, $x[i]$, $x[i + 1]$, $x[i+ 2]$</li>
+      <li data-step>Assign each sample positions $-1, 0, 1, 2$, then, the read position is literally $f$.</li>
+      <li data-step>Now we need to find $\ell_{-1}, \ell_0, \ell_1, \ell_2$.</li>
+    </ul>
+    <div class="widget fig-frac"></div>
+    <div class="row wctl">
+      <label for="lg-d">D</label>
+      <input id="lg-d" type="range" min="2" max="12" step="0.05" value="6.3">
+      <span class="val" id="lg-dval">D = 6.30</span>
+    </div>
+  </section>
+
+
+    <section class="slide">
+    <div class="stitle">lagrange interpolation <span>— solving the first weight</span></div>
+    <ul class="bullets">
+      <li><b>Recall</b> the basis polynomial $\ell_m$:
+        $$\ell_m(t) \;=\; \prod_{\substack{j = 0 \\ j \neq m}}^{P} \frac{t - j}{m - j}$$
+      </li>
+      <li data-step>Write the definition for the sample at position $m = -1$. Here, the scary product symbol is over $j = 0, 1, 2$:
+        $$\ell_{-1}(t) \;=\; \prod_{j=0}^{2}\frac{t-j}{-1-j} \;=\; \frac{t-0}{-1-0}\cdot\frac{t-1}{-1-1}\cdot\frac{t-2}{-1-2}$$
+      </li>
+      <li data-step>Crunch this to get:
+        $$\ell_{-1}(t) \;=\; -\frac{t\,(t-1)\,(t-2)}{6}$$
+      </li>
+      <li data-step>Do the same for $m = 0, 1, 2$, and the interpolated sample is the weighted sum recalled from before:
+        $$p(t) \;=\; \sum_{m} a_m\,\ell_m(t)$$
+        where $a_{m} = x[i + m]$ 
+      </li>
+    </ul>
+  </section>
+
+  <section class="slide" data-widget="lagrange">
+    <div class="stitle">lagrange interpolation </div>
+    <ul class="bullets">
+      <li>We repeat the process for $m=0,1,2$.</li>
+      <li class="tight">
+        $$\ell_{-1}(f) = -\frac{f(f-1)(f-2)}{6} \qquad \ell_0(f) = \frac{(f+1)(f-1)(f-2)}{2} \qquad \ell_1(f) = -\frac{(f+1)f(f-2)}{2} \qquad \ell_2(f) = \frac{(f+1)f(f-1)}{6}$$
+      </li>
+      <li data-step>The interpolated sample is :
+        $$x[D] = x[i + F] \;\approx\; \ell_{-1}(f)\,x[i-1] + \ell_0(f)\,x[i] + \ell_1(f)\,x[i+1] + \ell_2(f)\,x[i+2]$$
+      </li>
+      <li data-step>We showed third order Lagrange, but you can do any order you want.</li>
+      <li data-step>Lagrange interpolation is more accurate than linear (first order) interpolation, but it's more expensive.</li>
+    </ul>
+    <div class="widget fig-frac"></div>
+    <div class="row wctl">
+      <label for="lg2-d">D</label>
+      <input id="lg2-d" type="range" min="2" max="12" step="0.05" value="6.3">
+      <span class="val" id="lg2-dval">D = 6.30</span>
+    </div>
+  </section>
+
+  <!-- 10 ----------------------------------------------------------------- -->
+  <!-- figure disabled for now: restore data-widget="thiran" on the section and
+       uncomment the widget + slider below to bring it back -->
+  <section class="slide">
+    <div class="stitle">fractional delay </div>
+    <ul class="bullets">
+      <li>Lagrange interpolation is actually a subtle low-pass filter. An <b>allpass</b> filter has unity gain at <i>every</i> frequency. </li>
+      <li data-step>The Thiran allpass interplator has a maximally flat group delay, and preserves magnitude:
+        $$H(z) = \frac{\eta + z^{-1}}{1 + \eta\,z^{-1}}, \qquad \eta = \frac{1-f}{1+f}$$
+      </li>
+      <li data-step>Unlike Lagrange it has internal state. This can cause trouble with delay length modulation.</li>
+    </ul>
+    <!--
+    <div class="widget fig-frac"></div>
+    <div class="row wctl">
+      <label for="t-f">fraction f</label>
+      <input id="t-f" type="range" min="0.05" max="0.95" step="0.01" value="0.3">
+      <span class="val" id="t-fval">f = 0.30 samples</span>
+    </div>
+    -->
+  </section>
+
+  <!-- 11 ----------------------------------------------------------------- -->
+  <section class="slide" data-widget="sinc">
+    <div class="stitle">sinc interpolation</div>
+    <ul class="bullets">
+      <li>Sinc interpolation is the "proper" way to reconstruct a digital signal.</li>
+      <li data-step>By definition:
+        $$x(t) \;=\; \sum_{k=-\infty}^{+\infty} x[k]\,\operatorname{sinc}(t - k), \qquad \operatorname{sinc}(t) = \frac{\sin \pi t}{\pi t}$$
+      </li>
+      <li data-step>Observe that the sinc function equals 1 at zero and is zero for all other integer values.</li>
+      <li data-step>We just replace every sample with a shifted and scaled copy of the sinc function.</li>
+      <li data-step>Can you see why this is impossible to implement perfectly in practice?</li>
+    </ul>
+    <div class="widget fig-frac"></div>
+  </section>
+
+  <!-- 12 ----------------------------------------------------------------- -->
+  <section class="slide" data-widget="chorus">
+    <div class="stitle">applications <span>— chorus</span></div>
+    <ul class="bullets">
+      <li>A chorus makes one instrument sound like... well... a chorus</li>
+      <li data-step><b>Recipe: </b> copy the signal, delay the copy by roughly 10–30 ms, and mix it with the original.</li>
+      <li data-step>Then, modulate $D$ slowly with a slow sinusoidal LFO.</li>
+    </ul>
+    <div class="widget fig-frac"></div>
+    <div class="row wctl">
+      <label for="ch-depth">depth</label>
+      <input id="ch-depth" type="range" min="0.5" max="8" step="0.1" value="3">
+      <span class="val" id="ch-depthval">3.0 ms</span>
+    </div>
+  </section>
+
+  <!-- 13 ----------------------------------------------------------------- -->
+  <section class="slide" data-widget="flanger">
+    <div class="stitle">applications <span>— flanger</span></div>
+    <ul class="bullets">
+      <li>A flanger is a chorus with a smaller sweep value. sweep $D$ between roughly 0.1 and 10 ms, and mix with the original.</li>
+      <li data-step>At delays this short you don't hear an echo, instead we get a comb filter effect.</li>
+      <li data-step>A feedback delay <b>is</b> a comb filter. Frequencies that are harmonically related to the comb filter's tuning undergo interference.</li>
+    </ul>
+    <div class="widget fig-frac"></div>
+    <div class="row wctl">
+      <label for="fl-g">feedback</label>
+      <input id="fl-g" type="range" min="0" max="0.9" step="0.01" value="0.5">
+      <span class="val" id="fl-gval">g = 0.50</span>
+    </div>
+  </section>
+
+  <!-- 14 ----------------------------------------------------------------- -->
+  <section class="slide" data-widget="ks">
+    <div class="stitle">applications <span>— karplus-strong</span></div>
+    <ul class="bullets">
+      <li>If we tune a feedback delay to some desired frequency and put a lowpass filter in the loop, we get a string model!</li>
+      <li data-step>The loop repeats every $D$ samples, so its fundamental is $f_0 = f_s/D$.</li>
+      <li data-step>To emulate a pluck, we excite the model with an impulse or noise burst.</li>
+      <li data-step>This is the original <b>Karplus–Strong</b> algorithm (1983). It has since been extended to model complex stringed instruments from around the world.</li>
+    </ul>
+    <div class="widget fig-frac"></div>
+    <div class="row wctl">
+      <button id="ks-pluck" class="iconbtn wide">pluck</button>
+      <label for="ks-g">decay</label>
+      <input id="ks-g" type="range" min="0.90" max="0.999" step="0.001" value="0.99">
+      <span class="val" id="ks-gval">g = 0.990</span>
+    </div>
+  </section>
+
+</div>
+<div id="nav"><a id="prev" role="button" aria-label="previous slide">←</a><span id="pos">1 / 10</span><a id="next" role="button" aria-label="next slide">→</a></div>
+
+<script>
+"use strict";
+
+// ---- shared constants & helpers -----------------------------------------
+
+const INK = "#1c2333", FAINT = "#9aa4b2", MUT = "#5a6372", GRID = "#d7dce5";
+const ACC = "#e4572e", READC = "#3a7ca5";
+const STEP_MS = 1100;
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const fmtS = v => (v < 0 ? "−" : "+") + Math.abs(v).toFixed(2);
+
+// [-1, 1] → hue sweep blue → green → yellow → red, so values far apart in
+// amplitude are far apart in color, while nearby values stay similar.
+function valColor(v) {
+  const t = Math.min(1, Math.max(0, (v + 1) / 2));
+  return `hsl(${Math.round(230 - 230 * t)}, 75%, 74%)`;
+}
+
+// Lagrange interpolation over integer nodes 0..n−1: lagW is the basis weight
+// of node m evaluated at position t; lag4 evaluates the unique polynomial
+// through the values ys (n = 4, the order-3 case, unless ys says otherwise).
+// One code path feeds every drawn curve, weight label, and printed value on
+// the lagrange slides, so they can never disagree.
+const lagW = (t, m, n = 4) => [...Array(n).keys()].filter(q => q !== m)
+  .reduce((b, q) => b * (t - q) / (m - q), 1);
+const lag4 = (t, ys) => ys.reduce((acc, y, m) => acc + y * lagW(t, m, ys.length), 0);
+
+function label(ctx, text, x, y, color = INK, align = "left") {
+  ctx.font = "13px Menlo, Consolas, monospace";
+  ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "top";
+  ctx.fillText(text, x, y);
+}
+function arrowHead(ctx, x, y, dx, dy, size, color, alpha) {
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - ux * size - uy * size * 0.5, y - uy * size + ux * size * 0.5);
+  ctx.lineTo(x - ux * size + uy * size * 0.5, y - uy * size - ux * size * 0.5);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// ---- box-row primitives shared by both widgets ---------------------------
+
+function boxGeom(W, H, N, rowFrac) {
+  const boxW = Math.max(36, Math.min(74, Math.floor((W - 200) / N)));
+  const boxH = boxW;   // square cells
+  const rowW = N * boxW;
+  const x0 = Math.round((W - rowW) / 2);
+  const rowY = Math.round(H * rowFrac);
+  return { boxW, boxH, rowW, x0, rowY, slotX: i => x0 + i * boxW };
+}
+
+function drawCell(ctx, x, y, w, h, text, opts = {}) {
+  const a = opts.alpha === undefined ? 1 : opts.alpha;
+  if (a <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.fillStyle = opts.fill || "#ffffff";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.2;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  if (opts.index !== undefined) {
+    ctx.font = "9px Menlo, Consolas, monospace";
+    ctx.fillStyle = "rgba(28, 35, 51, 0.5)"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText(String(opts.index), x + 4, y + 3);
+  }
+  ctx.font = "bold " + (w >= 60 ? 14 : w >= 46 ? 13 : w >= 34 ? 10.5 : 9) + "px Menlo, Consolas, monospace";
+  ctx.fillStyle = opts.textColor || (opts.faintText ? FAINT : INK);
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, x + w / 2, y + h / 2);
+  ctx.restore();
+}
+
+// ---- widget lifecycle core ------------------------------------------------
+// Creates a dpr-aware canvas scoped to `container` (not the window). The rAF
+// loop only runs between activate() and deactivate(), so the engine can keep
+// exactly one widget animating at a time.
+
+function canvasWidget(container, hooks) {
+  const cv = document.createElement("canvas");
+  container.appendChild(cv);
+  const ctx = cv.getContext("2d");
+  let W = 0, H = 0, raf = 0, last = 0;
+
+  function doLayout() {
+    W = container.clientWidth; H = container.clientHeight;
+    if (!W || !H) return;
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(W * dpr);
+    cv.height = Math.round(H * dpr);
+    cv.style.width = W + "px";
+    cv.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (hooks.layout) hooks.layout(W, H);
+  }
+  new ResizeObserver(doLayout).observe(container);
+  doLayout();
+
+  function loop(now) {
+    const dt = Math.min(50, now - last);   // clamp: no burst after long absence
+    last = now;
+    hooks.tick(dt);
+    ctx.clearRect(0, 0, W, H);
+    hooks.draw(ctx, W, H);
+    raf = requestAnimationFrame(loop);
+  }
+
+  return {
+    activate() { doLayout(); last = performance.now(); raf = requestAnimationFrame(loop); },
+    deactivate() { cancelAnimationFrame(raf); },
+  };
+}
+
+// play/pause + step button wiring, identical on both widgets
+function wireTransport(slide, playId, stepId, get, set, step) {
+  const playBtn = slide.querySelector(playId);
+  const stepBtn = slide.querySelector(stepId);
+  const sync = () => {
+    const p = get();
+    playBtn.setAttribute("aria-pressed", String(p));
+    playBtn.querySelector(".ic-play").style.display = p ? "none" : "block";
+    playBtn.querySelector(".ic-pause").style.display = p ? "block" : "none";
+  };
+  playBtn.addEventListener("click", () => { set(!get()); sync(); });
+  stepBtn.addEventListener("click", () => { set(false); sync(); step(); });
+  sync();
+  return {
+    sync,
+    onKey(e) {
+      if (e.code === "Space") { e.preventDefault(); set(!get()); sync(); }
+      if (e.key === ".") { set(false); sync(); step(); }
+    },
+  };
+}
+
+// ---- slide 1: the delay line as a double-ended queue ----------------------
+
+function makeQueueWidget(slide) {
+  let N = 8;
+  let playing = !reducedMotion;
+  let acc = 0;
+  let cells = [];        // index 0 = leftmost = newest
+  let outgoing = null;   // the popped box, drifting out on the right
+  let G = boxGeom(2, 2, N, 0.36);
+
+  const nextSample = () => Math.random() * 2 - 1;
+
+  for (let i = 0; i < N; i++) cells.unshift({ value: nextSample(), x: null, alpha: 1 });
+
+  function step() {
+    const old = cells.pop();
+    outgoing = { value: old.value, x: old.x, y: G.rowY, alpha: 1 };
+    cells.unshift({ value: nextSample(), x: G.slotX(0) - G.boxW - 44, alpha: 0 });
+  }
+
+  function tick(dt) {
+    if (playing) { acc += dt; if (acc >= STEP_MS) { acc = 0; step(); } }
+    const k = reducedMotion ? 1 : 1 - Math.exp(-dt / 90);
+    cells.forEach((c, i) => {
+      if (c.x === null) c.x = G.slotX(i);
+      c.x += (G.slotX(i) - c.x) * k;
+      c.alpha += (1 - c.alpha) * k;
+    });
+    if (outgoing) {
+      outgoing.x += (G.slotX(N - 1) + G.boxW + 46 - outgoing.x) * k;
+      outgoing.y += (G.rowY + 26 - outgoing.y) * k;
+      outgoing.alpha += (0 - outgoing.alpha) * k;
+      if (outgoing.alpha < 0.02) outgoing = null;
+    }
+  }
+
+  function draw(ctx, W, H) {
+    const midY = G.rowY + G.boxH / 2;
+
+    if (outgoing) drawCell(ctx, outgoing.x, outgoing.y, G.boxW, G.boxH, fmtS(outgoing.value), { alpha: outgoing.alpha, fill: valColor(outgoing.value) });
+    cells.forEach(c => drawCell(ctx, c.x, G.rowY, G.boxW, G.boxH, fmtS(c.value), { alpha: c.alpha, fill: valColor(c.value) }));
+
+    // in → on the left (new samples), → out on the right (old samples)
+    ctx.strokeStyle = ACC; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(G.x0 - 44, midY); ctx.lineTo(G.x0 - 14, midY); ctx.stroke();
+    arrowHead(ctx, G.x0 - 10, midY, 1, 0, 6, ACC, 1);
+    label(ctx, "in", G.x0 - 50, midY - 6, ACC, "right");
+
+    ctx.strokeStyle = MUT; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(G.x0 + G.rowW + 14, midY); ctx.lineTo(G.x0 + G.rowW + 40, midY); ctx.stroke();
+    arrowHead(ctx, G.x0 + G.rowW + 44, midY, 1, 0, 6, MUT, 1);
+    label(ctx, "out", G.x0 + G.rowW + 52, midY - 6, MUT);
+
+    ctx.font = "12px Menlo, Consolas, monospace";
+    ctx.fillStyle = MUT; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText("newest", G.slotX(0) + G.boxW / 2, G.rowY + G.boxH + 10);
+    ctx.fillText("oldest", G.slotX(N - 1) + G.boxW / 2, G.rowY + G.boxH + 10);
+  }
+
+  const cw = canvasWidget(slide.querySelector(".widget"), {
+    layout: (W, H) => { G = boxGeom(W, H, N, 0.36); },
+    tick, draw,
+  });
+
+  const nEl = slide.querySelector("#q-n");
+  const nVal = slide.querySelector("#q-nval");
+  nEl.addEventListener("input", () => {
+    const n = parseInt(nEl.value, 10);
+    if (n < N) cells = cells.slice(0, n);
+    else while (cells.length < n) cells.push({ value: nextSample(), x: null, alpha: 1 });
+    N = n;
+    nVal.textContent = N + " samples";
+    const box = slide.querySelector(".widget");
+    G = boxGeom(box.clientWidth, box.clientHeight, N, 0.36);
+  });
+
+  const transport = wireTransport(slide, "#q-play", "#q-step",
+    () => playing, p => { playing = p; }, step);
+
+  return { activate: cw.activate, deactivate: cw.deactivate, onKey: transport.onKey };
+}
+
+// ---- slide 2: ring buffer with read & write heads --------------------------
+
+function makeRingWidget(slide) {
+  const N = 16;
+  const buf = new Array(N).fill(null);   // null = never written
+  const disp = new Array(N).fill(null);  // what each cell shows (lags buf until the incoming lands)
+  let flying = [];                       // cells in motion: written value dropping in, read value sliding out
+  let w = 0, D = 5;
+  let playing = false;   // the data is held back until every fragment on the slide is up
+  let revealed = false;
+  let acc = 0;
+  let lastIn = null;
+  const head = { wx: null, rx: null };   // eased pixel x of each head
+  let G = boxGeom(2, 2, N, 0.28);
+
+  const rIdx = () => (w - D + 2 * N) % N;
+
+  // wipe the buffer back to empty so the data reveals fresh on each pass through
+  function resetData() {
+    buf.fill(null);
+    disp.fill(null);
+    flying = [];
+    w = 0; acc = 0; lastIn = null;
+    head.wx = null; head.rx = null;
+  }
+
+  function step() {
+    lastIn = Math.random() * 2 - 1;
+    buf[w] = lastIn;         // write the newest sample
+    // a previous incoming still in flight? land it now so the cell never shows a stale value
+    for (const f of flying) if (f.kind === "in") disp[f.idx] = f.value;
+    flying = flying.filter(f => f.kind !== "in");
+    flying.push({ kind: "in", idx: w, value: lastIn, yOff: -(G.boxH + 26), alpha: 0 });
+    w = (w + 1) % N;         // advance and wrap
+    const r = rIdx();
+    flying.push({ kind: "out", idx: r, value: buf[r], yOff: 0, alpha: 1 });
+  }
+
+  function tick(dt) {
+    if (playing) { acc += dt; if (acc >= STEP_MS) { acc = 0; step(); } }
+    const k = reducedMotion ? 1 : 1 - Math.exp(-dt / 90);
+
+    for (const f of flying) {
+      if (f.kind === "in") {           // drop from the write head into the slot
+        f.yOff += (0 - f.yOff) * k;
+        // fade in fast and hit exactly 1 long before landing, so swapping the
+        // flying square for the cell underneath is pixel-for-pixel seamless
+        f.alpha = Math.min(1, f.alpha + dt / 120);
+        if (f.yOff > -0.5) { disp[f.idx] = f.value; f.done = true; }
+      } else {                         // read copy slides out below, toward the read head
+        f.yOff += (G.boxH + 34 - f.yOff) * k;
+        f.alpha += (0 - f.alpha) * k;
+        if (f.alpha < 0.02) f.done = true;
+      }
+    }
+    flying = flying.filter(f => !f.done);
+
+    const wTx = G.slotX(w) + G.boxW / 2;
+    const rTx = G.slotX(rIdx()) + G.boxW / 2;
+    // snap across a wrap so heads never slide backwards through the row
+    if (head.wx === null || Math.abs(wTx - head.wx) > G.rowW / 2) head.wx = wTx;
+    else head.wx += (wTx - head.wx) * k;
+    if (head.rx === null || Math.abs(rTx - head.rx) > G.rowW / 2) head.rx = rTx;
+    else head.rx += (rTx - head.rx) * k;
+  }
+
+  function draw(ctx, W, H) {
+    const r = rIdx();
+    const yTop = G.rowY, yBot = G.rowY + G.boxH;
+
+    for (let i = 0; i < N; i++) {
+      const unwritten = disp[i] === null;
+      drawCell(ctx, G.slotX(i), yTop, G.boxW, G.boxH,
+        unwritten ? "0.00" : fmtS(disp[i]),
+        { index: i, faintText: unwritten,
+          fill: unwritten ? undefined : valColor(disp[i]) });
+    }
+
+    // cells in motion: incoming drops in from the write head, read copy slides out below
+    for (const f of flying) {
+      const un = f.value === null;
+      drawCell(ctx, G.slotX(f.idx), yTop + f.yOff, G.boxW, G.boxH,
+        un ? "0.00" : fmtS(f.value),
+        { index: f.idx, alpha: f.alpha, faintText: un,
+          fill: un ? undefined : valColor(f.value) });
+    }
+
+    // the cell the read head points at
+    ctx.strokeStyle = READC; ctx.lineWidth = 3;
+    ctx.strokeRect(G.slotX(r) + 2, yTop + 2, G.boxW - 4, G.boxH - 4);
+
+    // write head above the row
+    ctx.strokeStyle = ACC; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(head.wx, yTop - 38); ctx.lineTo(head.wx, yTop - 13); ctx.stroke();
+    arrowHead(ctx, head.wx, yTop - 5, 0, 1, 11, ACC, 1);
+    ctx.font = "bold 17px Menlo, Consolas, monospace";
+    ctx.fillStyle = ACC; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("w", head.wx, yTop - 42);
+
+    // read head below the row
+    ctx.strokeStyle = READC; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(head.rx, yBot + 38); ctx.lineTo(head.rx, yBot + 13); ctx.stroke();
+    arrowHead(ctx, head.rx, yBot + 5, 0, -1, 11, READC, 1);
+    ctx.fillStyle = READC; ctx.textBaseline = "top";
+    ctx.fillText("r", head.rx, yBot + 42);
+
+    // wrap-around cue: end of the row feeds back to the start
+    const xEnd = G.slotX(N - 1) + G.boxW / 2, xBeg = G.slotX(0) + G.boxW / 2;
+    const yArc = yBot + 56;
+    ctx.strokeStyle = FAINT; ctx.globalAlpha = 0.7; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(xEnd, yArc);
+    ctx.quadraticCurveTo((xEnd + xBeg) / 2, yArc + 36, xBeg, yArc);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    arrowHead(ctx, xBeg, yArc - 2, -0.3, -1, 5, FAINT, 0.7);
+    ctx.font = "12px Menlo, Consolas, monospace";
+    ctx.fillStyle = FAINT; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText("wraps around", (xEnd + xBeg) / 2, yArc + 24);
+
+    const out = buf[r];
+    label(ctx,
+      `in = ${lastIn === null ? "—" : fmtS(lastIn)}   out = buf[${r}] = ${out === null ? "0.00" : fmtS(out)}   r = (w − ${D}) mod ${N}`,
+      W / 2, H - 20, MUT, "center");
+  }
+
+  const cw = canvasWidget(slide.querySelector(".widget"), {
+    layout: (W, H) => { G = boxGeom(W, H, N, 0.28); },
+    tick, draw,
+  });
+
+  const dEl = slide.querySelector("#r-d");
+  const dVal = slide.querySelector("#r-dval");
+  dEl.addEventListener("input", () => {
+    D = parseInt(dEl.value, 10);
+    dVal.textContent = D + " samples";
+  });
+
+  const transport = wireTransport(slide, "#r-play", "#r-step",
+    () => playing, p => { playing = p; }, step);
+
+  return {
+    activate: cw.activate,
+    deactivate: cw.deactivate,
+    onKey: transport.onKey,
+    // the engine calls this on every fragment change: the data animation only
+    // begins once the last fragment is up, and rewinds if we step back past it
+    onStage(stage, total) {
+      const done = stage >= total;
+      if (done === revealed) return;
+      revealed = done;
+      if (done) {
+        playing = !reducedMotion;   // let the samples start flowing in
+        acc = STEP_MS;              // first one lands on the next frame
+      } else {
+        playing = false;            // stepping back hides the data again
+        resetData();
+      }
+      transport.sync();
+    },
+  };
+}
+
+// ---- slide 3: feedforward vs feedback comb --------------------------------
+// Two signal-flow diagrams stacked in one canvas, driven by one clock: the
+// same random sample enters both at the same step. Each system is a shift
+// register of D cells; the only difference is that feedback adds g times the
+// register output back onto the register input.
+
+function makeFFFBWidget(slide) {
+  const D = 4, HIST = 16, EPS = 0.005;
+  const FSTEP_MS = STEP_MS * 2; // this slide runs at half speed so the loop trip reads
+  const LOOP_MS = 1500;         // loop trip; merge lands well before the next step
+  const LOOP_SCALE = 0.66;      // looper size after the tap split
+  let g = 0.70;
+  let playing = !reducedMotion;
+  let acc = 0;
+  let G = null;
+
+  function mkSys(isFb) {
+    const s = {
+      isFb,
+      reg: [],         // D cells, index 0 = newest = leftmost (queue pattern)
+      outgoing: null,  // the popped cell, drifting out along the output wire
+      looper: null,    // fb only: the popped cell riding the loop rail back to ⊕
+      hist: [],        // output history strip — disabled for now
+      histOut: null,
+    };
+    for (let i = 0; i < D; i++) s.reg.push({ value: 0, x: null, alpha: 1 });
+    // output history strip — disabled for now
+    // for (let i = 0; i < HIST; i++) s.hist.push({ value: 0, x: null, y: null, alpha: 1 });
+    return s;
+  }
+  const ff = mkSys(false), fb = mkSys(true);
+
+  function layout(W, H) {
+    const Hh = H / 2, compact = Hh < 195;
+    const boxW = Math.max(36, Math.min(56, Math.floor((W - 320) / D)));
+    const histW = Math.max(18, Math.min(30, Math.floor((W - 280) / HIST)));
+    const regX0 = Math.round((W - D * boxW) / 2);
+    G = {
+      boxW, histW,
+      xIn: 62,
+      regX0, regX1: regX0 + D * boxW,
+      xJoin: regX0 - 40,               // where the feedback loop rejoins the input
+      xTap: regX0 + D * boxW + 70,     // where the feedback loop taps the output
+      regSlot: i => regX0 + i * boxW,
+      histSlot: i => regX0 + D * boxW - (HIST - i) * histW,
+      yTop:    s => (s.isFb ? Hh : 0),
+      // wire height within the half; 30 = the caption band above
+      regMidY: s => G.yTop(s) + 30 + Math.round((Hh - 30) * 0.42),
+      regY:    s => G.regMidY(s) - boxW / 2,
+      loopY:   s => G.regY(s) + boxW + (compact ? 16 : 26),
+      histY:   s => G.yTop(s) + Hh - histW - (compact ? 6 : 10),
+    };
+  }
+  layout(800, 400);   // placeholder until the canvas reports real dimensions
+
+  // where the fb entering cell waits for the loop: right edge just shy of the ⊕
+  const holdX = () => G.xJoin - G.boxW - 14;
+
+  // g > 1 lets values grow without bound, so cells need a compact formatter
+  const fmtV = v => {
+    const a = Math.abs(v), sgn = v < 0 ? "−" : "+";
+    if (a < 10) return sgn + a.toFixed(2);
+    if (a < 100) return sgn + a.toFixed(1);
+    if (a < 10000) return sgn + Math.round(a);
+    return sgn + a.toExponential(0).replace("e+", "e");
+  };
+
+  // |v| > 1 is "blown": saturated red that darkens as the overload grows, with
+  // white text. the shake starts later, past |v| = 4, and stays subtle
+  const hotFill = v =>
+    `hsl(4, 82%, ${Math.max(40, 64 - 7 * Math.log10(Math.abs(v)))}%)`;
+  const jit = v => {
+    if (reducedMotion || Math.abs(v) <= 4) return 0;
+    const amp = Math.min(2.5, 0.5 + 0.8 * Math.log10(Math.abs(v) / 4));
+    return (Math.random() - 0.5) * 2 * amp;
+  };
+  function cellOpts(v) {
+    const quiet = Math.abs(v) < EPS;
+    const blown = !quiet && Math.abs(v) > 1;
+    return {
+      text: quiet ? "0.00" : fmtV(v),
+      faintText: quiet,
+      fill: quiet ? undefined : blown ? hotFill(v) : valColor(v),
+      textColor: blown ? "#fff" : undefined,
+    };
+  }
+
+  // the feedback rail: vacated slot → tap → down → under the register → up into
+  // the ⊕. rebuilt from G on every call so resize self-corrects; t is normalized
+  // arc length, so traversal is constant-speed with no lurch at the corners.
+  function loopRail(s) {
+    const regMidY = G.regMidY(s), loopY = G.loopY(s);
+    const pts = [
+      [G.regX1 - G.boxW / 2, regMidY],
+      [G.xTap, regMidY],
+      [G.xTap, loopY],
+      [G.xJoin, loopY],
+      [G.xJoin, regMidY + 14],
+    ];
+    const seg = [0];
+    for (let i = 1; i < pts.length; i++)
+      seg.push(seg[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const total = seg[seg.length - 1];
+    return {
+      tTap: seg[1] / total,                             // where the y[n] copy splits off
+      tXg: (seg[2] + (G.xTap - G.xJoin) / 2) / total,   // where the value picks up ×g
+      tUp: seg[3] / total,                              // where absorption into ⊕ starts
+      at(t) {
+        const d = t * total;
+        let i = 1;
+        while (i < seg.length - 1 && seg[i] < d) i++;
+        const f = (d - seg[i - 1]) / (seg[i] - seg[i - 1] || 1);
+        return { x: pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * f,
+                 y: pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * f };
+      },
+    };
+  }
+
+  function step() {
+    const x = Math.random() * 2 - 1;   // the same input sample feeds both systems
+    for (const s of [ff, fb]) {
+      // finalize any looper still in flight: the stored values are already
+      // correct, so rapid stepping just snaps the display to them
+      if (s.reg[0].hold) { s.reg[0].shown = null; s.reg[0].hold = false; }
+      s.looper = null;
+
+      const out = s.reg[D - 1].value;           // y[n]: the sample leaving the register
+      // feedback adds g·y[n] at the input sum; clamped so g > 1 blows up
+      // visibly but never reaches Infinity
+      const regIn = s.isFb ? Math.max(-1e9, Math.min(1e9, x + g * out)) : x;
+
+      const old = s.reg.pop();
+      if (s.isFb && !reducedMotion) {
+        // the popped box rides the loop rail; its y[n] copy splits off at the
+        // tap (spawned in tick), and x[n] waits at the ⊕ to be added to it.
+        // zeros make the trip too: the feedback path has no special case for
+        // silence, and the animation shouldn't suggest one
+        s.looper = { t: 0, value: out, gv: g * out, split: false, flipped: false };
+        s.reg.unshift({ value: regIn, x: Math.max(8, holdX() - 70), alpha: 0, shown: x, hold: true });
+      } else {
+        s.outgoing = { value: out, x: old.x === null ? G.regSlot(D - 1) : old.x, alpha: 1 };
+        s.reg.unshift({ value: regIn, x: G.regSlot(0) - G.boxW - 30, alpha: 0 });
+      }
+
+      // output history strip — disabled for now
+      // s.histOut = s.hist.pop();
+      // s.hist.unshift({ value: out, x: G.histSlot(0), y: G.histY(s), alpha: 0 });
+    }
+  }
+
+  function tick(dt) {
+    if (playing) { acc += dt; if (acc >= FSTEP_MS) { acc = 0; step(); } }
+    const k = reducedMotion ? 1 : 1 - Math.exp(-dt / 90);
+    const kOut = reducedMotion ? 1 : 1 - Math.exp(-dt / 300);  // slower fade on exit
+    for (const s of [ff, fb]) {
+      const L = s.looper;
+      if (L) {   // advance before cell easing so the merge retargets reg[0] this frame
+        L.t = Math.min(1, L.t + dt / LOOP_MS);   // not gated on playing: "." shows the trip
+        const rail = loopRail(s);
+        if (!L.split && L.t >= rail.tTap) {      // the y[n] copy peels off at the tap
+          L.split = true;
+          s.outgoing = { value: L.value, x: G.xTap - G.boxW / 2, alpha: 1 };
+        }
+        if (!L.flipped && L.t >= rail.tXg) L.flipped = true;
+        if (L.t >= 1) {   // absorbed into the ⊕: x[n] becomes the sum and moves on
+          if (s.reg[0].hold) { s.reg[0].shown = null; s.reg[0].hold = false; }
+          s.looper = null;
+        }
+      }
+      s.reg.forEach((c, i) => {
+        const tx = (i === 0 && c.hold) ? holdX() : G.regSlot(i);
+        if (c.x === null) c.x = tx;
+        c.x += (tx - c.x) * k;
+        c.alpha += (1 - c.alpha) * k;
+      });
+      if (s.outgoing) {   // drift out along the output wire, past the tap point
+        s.outgoing.x += (G.regX1 + 96 - s.outgoing.x) * k;
+        s.outgoing.alpha += (0 - s.outgoing.alpha) * kOut;
+        if (s.outgoing.alpha < 0.02) s.outgoing = null;
+      }
+      // output history strip — disabled for now
+      // s.hist.forEach((c, i) => {
+      //   if (c.x === null) { c.x = G.histSlot(i); c.y = G.histY(s); }
+      //   c.x += (G.histSlot(i) - c.x) * k;
+      //   c.alpha += (1 - c.alpha) * k;
+      // });
+    }
+  }
+
+  function drawHalf(ctx, W, s) {
+    const regMidY = G.regMidY(s), regY = G.regY(s), loopY = G.loopY(s);
+    const bw = G.boxW;
+
+    // input wire into the register (through the input sum, for feedback)
+    label(ctx, "x[n]", G.xIn - 10, regMidY - 7, ACC, "right");
+    ctx.strokeStyle = ACC; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(G.xIn, regMidY);
+    ctx.lineTo(s.isFb ? G.xJoin - 10 : G.regX0 - 8, regMidY); ctx.stroke();
+    if (s.isFb) {
+      ctx.beginPath(); ctx.moveTo(G.xJoin + 10, regMidY);
+      ctx.lineTo(G.regX0 - 8, regMidY); ctx.stroke();
+    }
+    arrowHead(ctx, G.regX0 - 4, regMidY, 1, 0, 6, ACC, 1);
+
+    // output wire out of the register
+    ctx.strokeStyle = MUT; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(G.regX1 + 4, regMidY); ctx.lineTo(W - 80, regMidY); ctx.stroke();
+    arrowHead(ctx, W - 76, regMidY, 1, 0, 6, MUT, 1);
+    label(ctx, "y[n]", W - 68, regMidY - 7, MUT);
+
+    if (s.isFb) {
+      // the loop: tap the output, run under the register, add back onto the input
+      ctx.strokeStyle = READC; ctx.fillStyle = READC; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(G.xTap, regMidY, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(G.xTap, regMidY); ctx.lineTo(G.xTap, loopY);
+      ctx.lineTo(G.xJoin, loopY); ctx.lineTo(G.xJoin, regMidY + 18); ctx.stroke();
+      arrowHead(ctx, G.xJoin, regMidY + 14, 0, -1, 6, READC, 1);
+      label(ctx, "×g", (G.xTap + G.xJoin) / 2, loopY + 8, READC, "center");
+
+      // the popped box riding the rail: full size until the tap split, then
+      // scaled down; value picks up ×g on the bottom run; fades as ⊕ absorbs it
+      if (s.looper) {
+        const L = s.looper, rail = loopRail(s);
+        const p = rail.at(L.t);
+        const lw = L.split ? Math.round(LOOP_SCALE * bw) : bw;
+        const v = L.flipped ? L.gv : L.value;
+        const a = L.t < rail.tUp ? 1 : 1 - (L.t - rail.tUp) / (1 - rail.tUp);
+        const o = cellOpts(v);
+        drawCell(ctx, p.x - lw / 2 + jit(v), p.y - lw / 2 + jit(v), lw, lw, o.text,
+          { ...o, alpha: a });
+      }
+
+      // input sum: x[n] plus the fed-back g·y[n]
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath(); ctx.arc(G.xJoin, regMidY, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.4; ctx.stroke();
+      ctx.font = "bold 13px Menlo, Consolas, monospace";
+      ctx.fillStyle = INK; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("+", G.xJoin, regMidY + 0.5);
+    }
+
+    // the popped sample drifts out along the output wire
+    if (s.outgoing) {
+      const o = cellOpts(s.outgoing.value);
+      drawCell(ctx, s.outgoing.x + jit(s.outgoing.value), regY + jit(s.outgoing.value),
+        bw, bw, o.text, { ...o, alpha: s.outgoing.alpha });
+    }
+
+    // the delay register: D cells, newest on the left. a holding cell shows the
+    // raw x[n] (shown) until the loop merge flips it to the stored sum
+    for (let i = 0; i < D; i++) {
+      const c = s.reg[i];
+      const v = c.shown ?? c.value;
+      const o = cellOpts(v);
+      drawCell(ctx, c.x + jit(v), regY + jit(v), bw, bw, o.text,
+        { ...o, alpha: c.alpha });
+    }
+
+    // output history strip — disabled for now
+    // label(ctx, "output", G.histSlot(0) - 12, G.histY(s) + G.histW / 2 - 6, MUT, "right");
+    // for (const c of s.hist)
+    //   drawCell(ctx, c.x, c.y, G.histW, G.histW, "",
+    //     { alpha: c.alpha, fill: Math.abs(c.value) < EPS ? undefined : valColor(c.value) });
+  }
+
+  function draw(ctx, W, H) {
+    drawHalf(ctx, W, ff);
+    drawHalf(ctx, W, fb);
+  }
+
+  const cw = canvasWidget(slide.querySelector(".widget"), { layout, tick, draw });
+
+  const gEl = slide.querySelector("#f-g");
+  const gVal = slide.querySelector("#f-gval");
+  gEl.addEventListener("input", () => {
+    g = parseFloat(gEl.value);
+    gVal.textContent = g.toFixed(2);
+    gVal.style.color = g > 1 ? ACC : "";   // flag the unstable zone
+  });
+
+  const transport = wireTransport(slide, "#f-play", "#f-step",
+    () => playing, p => { playing = p; }, step);
+
+  return { activate: cw.activate, deactivate: cw.deactivate, onKey: transport.onKey };
+}
+
+// ---- slides 5, 6, 8, 9, 11: fractional delay — the read head between samples
+// A sampled signal and a read head at x[n − D]. Integer D lands exactly on a
+// stored sample. Fractional D lands between two of them: the value it needs
+// existed in the original signal (the dashed curve) but was never stored.
+// mode "lerp" answers the problem: it draws the straight line between the two
+// neighbors and reads the estimate off that line. mode "lagrange" fits the
+// cubic through the four nearest samples and reads the estimate off the curve.
+// mode "sinc" reconstructs the whole signal — every sample weighted by one
+// shifted sinc kernel, drawn sliding along with the head.
+
+function makeFracWidget(slide, mode = "frac") {
+  const lerp = mode === "lerp", lag = mode === "lagrange", snc = mode === "sinc",
+    interp = lerp || lag || snc;
+  const N = 14;                 // stored samples in view, newest on the right
+  let Dt = 6.3;                 // requested delay (the slider)
+  let Dv = Dt;                  // eased head position
+  let G = null;
+
+  // fixed test signal, sampled at the integer positions; deterministic so the
+  // figure reads the same on every load
+  const sig = t => 0.62 * Math.sin(0.9 * t) + 0.28 * Math.sin(1.7 * t + 1.1);
+
+  // the ideal interpolation kernel: 1 at t = 0, 0 at every other integer,
+  // decaying like 1/t
+  const sincf = t => Math.abs(t) < 1e-9 ? 1 : Math.sin(Math.PI * t) / (Math.PI * t);
+  // bandlimited reconstruction from the samples in view — exact in the middle,
+  // short of the samples outside the window near the edges
+  const recon = t => {
+    let s = 0;
+    for (let k = 0; k < N; k++) s += sig(k) * sincf(t - k);
+    return s;
+  };
+
+  function layout(W, H) {
+    const x0 = 84, x1 = W - 64;
+    G = {
+      x0, x1,
+      baseY: Math.round(H * 0.52),
+      amp: Math.min(110, H * 0.3),
+      xAt: p => x0 + p * (x1 - x0) / (N - 1),   // p may be fractional
+    };
+  }
+  layout(800, 320);   // placeholder until the canvas reports real dimensions
+
+  const yAt = v => G.baseY - v * G.amp;
+
+  function tick(dt) {
+    const k = reducedMotion ? 1 : 1 - Math.exp(-dt / 90);
+    Dv += (Dt - Dv) * k;
+  }
+
+  function draw(ctx, W, H) {
+    const bY = G.baseY;
+    const p = N - 1 - Dv;                    // head position in sample coords
+    const xr = G.xAt(p), yr = yAt(sig(p));
+    const isInt = Math.abs(Dt - Math.round(Dt)) < 1e-9;
+    const onSample = isInt && Math.abs(Dv - Dt) < 0.02;
+    const iL = Math.max(0, Math.floor(p)), iR = Math.min(N - 1, Math.ceil(p));
+    const u = p - iL;                              // blend fraction: 0 at iL, 1 at iR
+    // lagrange stencil: one sample either side of the read interval, clamped so
+    // eased transients near the view edges never index off the buffer
+    const i0 = Math.min(Math.max(iL - 1, 0), N - 4);
+    const stencil = [i0, i0 + 1, i0 + 2, i0 + 3];
+    const est = snc ? recon(p)
+      : lag ? lag4(p - i0, stencil.map(sig))
+      : (1 - u) * sig(iL) + u * sig(iR);           // the interpolated estimate
+    const yE = yAt(est);
+
+    // baseline
+    ctx.strokeStyle = GRID; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(G.x0 - 26, bY); ctx.lineTo(G.x1 + 26, bY); ctx.stroke();
+
+    // the original signal the samples were taken from
+    ctx.strokeStyle = FAINT; ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    for (let t = 0; t <= N - 1 + 1e-9; t += 0.04) {
+      t === 0 ? ctx.moveTo(G.xAt(t), yAt(sig(t))) : ctx.lineTo(G.xAt(t), yAt(sig(t)));
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+
+    // the read head, D samples behind the newest — red while the value is
+    // unanswerable; interpolating modes stay blue, since there is always an answer
+    const headColor = isInt || interp ? READC : ACC;
+    ctx.strokeStyle = headColor; ctx.lineWidth = 1.6; ctx.setLineDash([5, 4]);
+    // reach down to the marker even when it sits below the axis (negative value)
+    ctx.beginPath(); ctx.moveTo(xr, 38);
+    ctx.lineTo(xr, Math.max(bY, interp ? Math.max(yr, yE) : yr)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = "bold 14px Menlo, Consolas, monospace";
+    ctx.fillStyle = headColor; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    // integer D lands on a stored sample, so we can print its value. a fractional
+    // D needs a value the buffer never stored: ??? on the problem slide, the
+    // blend of the two neighbors once we interpolate
+    const Di = Math.floor(Dt + 1e-9), f = Dt - Di;
+    // the printed value tracks the slider target, not the eased head, so the
+    // text settles instantly; same stencil clamp as above
+    const pT = N - 1 - Dt, i0T = Math.min(Math.max(Math.floor(pT) - 1, 0), N - 4);
+    const rhs = isInt ? "= " + fmtS(sig(N - 1 - Math.round(Dt)))
+      : snc ? "≈ " + fmtS(recon(pT))
+      : lag ? "≈ " + fmtS(lag4(pT - i0T, [i0T, i0T + 1, i0T + 2, i0T + 3].map(sig)))
+      : lerp ? "≈ " + fmtS((1 - f) * sig(N - 1 - Di) + f * sig(N - 2 - Di))
+      : "= ???";
+    ctx.fillText(`x[n − ${isInt ? Math.round(Dt) : Dt.toFixed(2)}] ${rhs}`, xr, 16);
+
+    // the stored samples: stem + dot at each integer position
+    ctx.font = "10px Menlo, Consolas, monospace";
+    for (let i = 0; i < N; i++) {
+      const v = sig(i), x = G.xAt(i), y = yAt(v);
+      ctx.strokeStyle = FAINT; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(x, bY); ctx.lineTo(x, y); ctx.stroke();
+      ctx.fillStyle = valColor(v);
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.1; ctx.stroke();
+      ctx.fillStyle = FAINT; ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.fillText(i === N - 1 ? "n" : "n−" + (N - 1 - i), x, bY + G.amp + 12);
+    }
+
+    if (onSample) {
+      // integer D: the head lands exactly on a stored sample
+      ctx.strokeStyle = READC; ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.arc(G.xAt(N - 1 - Dt), yAt(sig(N - 1 - Dt)), 9, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      // the stored samples around the head — all we have to work with: the
+      // two neighbors, or the full 4-sample stencil in lagrange mode
+      const marks = lag || snc ? stencil : [...new Set([iL, iR])];
+      for (const i of marks) {
+        const v = sig(i), x = G.xAt(i), y = yAt(v);
+        ctx.strokeStyle = ACC; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, 8.5, 0, Math.PI * 2); ctx.stroke();
+      }
+      if (interp) {
+        if (snc) {
+          // the full bandlimited reconstruction: the sum of every sample's
+          // shifted sinc. it lands on the dashed original mid-view and peels
+          // away near the edges, where the sum is missing the samples that
+          // fell outside the window
+          ctx.strokeStyle = ACC; ctx.lineWidth = 2;
+          ctx.beginPath();
+          for (let t = 0; t <= N - 1 + 1e-9; t += 0.04) {
+            t === 0 ? ctx.moveTo(G.xAt(t), yAt(recon(t))) : ctx.lineTo(G.xAt(t), yAt(recon(t)));
+          }
+          ctx.stroke();
+          // one shifted sinc kernel, centered on the read head. its height at
+          // each integer is that sample's weight — 1-and-zeros when the head
+          // sits on a sample
+          ctx.strokeStyle = READC; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.85;
+          ctx.beginPath();
+          for (let t = 0; t <= N - 1 + 1e-9; t += 0.04) {
+            t === 0 ? ctx.moveTo(G.xAt(t), yAt(sincf(t - p))) : ctx.lineTo(G.xAt(t), yAt(sincf(t - p)));
+          }
+          ctx.stroke(); ctx.globalAlpha = 1;
+          ctx.fillStyle = READC;
+          for (let k = 0; k < N; k++) {
+            ctx.beginPath(); ctx.arc(G.xAt(k), yAt(sincf(k - p)), 3.5, 0, Math.PI * 2); ctx.fill();
+          }
+        } else if (lag) {
+          // the real cubic through the stencil. reads only ever happen in the
+          // middle interval; the outer spans draw lighter to show the fit
+          // extends past the read interval
+          const ys = stencil.map(sig);
+          const seg = (a, b, lw, alpha) => {
+            ctx.strokeStyle = ACC; ctx.lineWidth = lw; ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            for (let t = a; t <= b + 1e-9; t += 0.03) {
+              const x = G.xAt(i0 + t), y = yAt(lag4(t, ys));
+              t === a ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            }
+            ctx.stroke(); ctx.globalAlpha = 1;
+          };
+          seg(0, 1, 1.2, 0.45); seg(2, 3, 1.2, 0.45); seg(1, 2, 2, 1);
+        } else {
+          // the linear model: a straight line between the two neighbors
+          ctx.strokeStyle = ACC; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(G.xAt(iL), yAt(sig(iL)));
+          ctx.lineTo(G.xAt(iR), yAt(sig(iR))); ctx.stroke();
+        }
+        // each sample's weight: the closer the head, the larger the share —
+        // and in lagrange mode the outer two dip negative
+        ctx.font = "11px Menlo, Consolas, monospace";
+        ctx.fillStyle = ACC; ctx.textAlign = "center";
+        const wpairs = snc ? stencil.map(i => [i, sincf(p - i)])
+          : lag ? stencil.map((i, m) => [i, lagW(p - i0, m)])
+          : [[iL, 1 - u], [iR, u]];
+        for (const [i, wgt] of wpairs) {
+          const v = sig(i), x = G.xAt(i), y = yAt(v);
+          ctx.textBaseline = v >= 0 ? "bottom" : "top";
+          ctx.fillText(("×" + wgt.toFixed(2)).replace("-", "−"), x, v >= 0 ? y - 13 : y + 13);
+        }
+        // the miss against the true signal: biggest where the curve bends
+        if (Math.abs(yE - yr) > 3) {
+          ctx.strokeStyle = MUT; ctx.lineWidth = 1.2; ctx.setLineDash([2, 3]);
+          ctx.beginPath(); ctx.moveTo(xr, yE); ctx.lineTo(xr, yr); ctx.stroke();
+          ctx.setLineDash([]);
+          if (Math.abs(yE - yr) > 18) {
+            ctx.font = "10px Menlo, Consolas, monospace";
+            ctx.fillStyle = MUT; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+            ctx.fillText("error", xr + 9, (yE + yr) / 2);
+          }
+        }
+        // the estimate: a synthesized sample sitting on the model
+        ctx.fillStyle = valColor(est);
+        ctx.beginPath(); ctx.arc(xr, yE, 5.5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = READC; ctx.lineWidth = 2; ctx.stroke();
+      } else {
+        // mark where the head lands, but print no value: that number could only
+        // be read off the dashed curve, which a real delay line never stored
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath(); ctx.arc(xr, yr, 6.5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = headColor; ctx.lineWidth = 2; ctx.stroke();
+      }
+    }
+  }
+
+  const cw = canvasWidget(slide.querySelector(".widget"), { layout, tick, draw });
+
+  // both frac slides carry one D slider + readout; ids differ, so match by shape
+  const dEl = slide.querySelector("input[type=range]");
+  const dVal = slide.querySelector(".val");
+  dEl.addEventListener("input", () => {
+    Dt = parseFloat(dEl.value);
+    dVal.textContent = "D = " + Dt.toFixed(2);
+  });
+
+  return { activate: cw.activate, deactivate: cw.deactivate };
+}
+
+// ---- slide 7: the unique polynomial through the points ----------------------
+// Five sample values at the integer nodes and the real degree-4 lagrange
+// interpolant through them, recomputed every frame. Drag a point vertically:
+// the whole curve reshapes but keeps passing through every sample. While a
+// point is held, its own term of the sum — a_m·ℓ_m(t), a scaled basis
+// polynomial — shows as a dashed ghost.
+
+function makeInterpWidget(slide) {
+  const P = 4;                        // degree; P+1 draggable points
+  const V = 1.55;                     // display range; the curve can overshoot
+  const a = [0.25, 0.7, -0.45, 0.6, -0.2];   // values clamp to [−1, 1]
+  const NAME = ["a₀", "a₁", "a₂", "a₃", "a₄"];
+  let dragIdx = -1, hoverIdx = -1;
+  let G = null;
+
+  function layout(W, H) {
+    const x0 = 76, x1 = W - 56, y0 = 18, y1 = H - 34;
+    G = {
+      xAt: t => x0 + t * (x1 - x0) / P,
+      yAt: v => y1 - (v + V) * (y1 - y0) / (2 * V),
+      vAt: y => (y1 - y) * 2 * V / (y1 - y0) - V,
+    };
+  }
+  layout(800, 300);   // placeholder until the canvas reports real dimensions
+
+  function draw(ctx, W, H) {
+    // baseline with the node positions
+    ctx.strokeStyle = GRID; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(G.xAt(0) - 26, G.yAt(0));
+    ctx.lineTo(G.xAt(P) + 26, G.yAt(0)); ctx.stroke();
+    ctx.fillStyle = INK; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.font = "bold 13px Menlo, Consolas, monospace";
+    for (let q = 0; q <= P; q++) {
+      ctx.fillText(`k = ${q}`, G.xAt(q), G.yAt(-V) + 8);
+    }
+
+    // the held point's term of the sum: its value scaling its basis polynomial
+    const act = dragIdx !== -1 ? dragIdx : hoverIdx;
+    if (act !== -1) {
+      ctx.strokeStyle = MUT; ctx.lineWidth = 1.2; ctx.setLineDash([3, 4]);
+      ctx.beginPath();
+      for (let t = 0; t <= P + 1e-9; t += 0.02) {
+        const x = G.xAt(t), y = G.yAt(a[act] * lagW(t, act, P + 1));
+        t === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    // the interpolant: the one degree-P polynomial through all P+1 points
+    ctx.strokeStyle = ACC; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let t = 0; t <= P + 1e-9; t += 0.02) {
+      const x = G.xAt(t), y = G.yAt(lag4(t, a));
+      t === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // the points, on top: the data the curve has no choice but to pass through
+    ctx.font = "15px Menlo, Consolas, monospace";
+    for (let m = 0; m <= P; m++) {
+      const x = G.xAt(m), y = G.yAt(a[m]);
+      ctx.fillStyle = valColor(a[m]);
+      ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.2; ctx.stroke();
+      if (m === act) {
+        ctx.strokeStyle = READC; ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.fillStyle = m === act ? READC : MUT;
+      ctx.textAlign = "center"; ctx.textBaseline = a[m] >= 0 ? "bottom" : "top";
+      const txt = m === dragIdx ? `${NAME[m]} = ${fmtS(a[m])}` : NAME[m];
+      ctx.fillText(txt, x, a[m] >= 0 ? y - 19 : y + 19);
+    }
+  }
+
+  // dragging: pointer events on the container (the canvas fills it exactly)
+  const box = slide.querySelector(".widget");
+  box.style.touchAction = "none";
+  const pos = ev => {
+    const r = box.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  };
+  const hitTest = p => {
+    for (let m = 0; m <= P; m++) {
+      if (Math.hypot(p.x - G.xAt(m), p.y - G.yAt(a[m])) <= 16) return m;
+    }
+    return -1;
+  };
+  box.addEventListener("pointerdown", ev => {
+    if (dragIdx !== -1) return;
+    const m = hitTest(pos(ev));
+    if (m === -1) return;
+    dragIdx = m;
+    box.setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+  });
+  box.addEventListener("pointermove", ev => {
+    if (dragIdx !== -1) {
+      a[dragIdx] = Math.min(1, Math.max(-1, G.vAt(pos(ev).y)));
+    } else {
+      hoverIdx = hitTest(pos(ev));
+    }
+    box.style.cursor = dragIdx !== -1 || hoverIdx !== -1 ? "ns-resize" : "";
+  });
+  const drop = () => { dragIdx = -1; };
+  box.addEventListener("pointerup", drop);
+  box.addEventListener("pointercancel", drop);
+
+  const cw = canvasWidget(box, { layout, tick: () => {}, draw });
+  return {
+    activate: cw.activate,
+    // a drag can be alive when the slide switches; pointerup may never arrive
+    deactivate: () => { dragIdx = hoverIdx = -1; box.style.cursor = ""; cw.deactivate(); },
+  };
+}
+
+// ---- slide 10: thiran allpass — the frequency responses, computed -----------
+// Three fractional-delay interpolators at the same f, measured the honest way:
+// evaluate H(e^{jω}) across the band and plot magnitude and phase delay. The
+// FIR pair droop toward Nyquist; the allpass is pinned at |H| = 1 and pays in
+// timing instead — its delay is f only at DC and bends toward 1 sample.
+
+function makeThiranWidget(slide) {
+  let f = 0.30;
+  const K = 160;                     // frequency samples across (0, π)
+  let G = null;
+
+  function layout(W, H) {
+    const gap = 56, x0 = 76, x1 = W - 40, y0 = 30, y1 = H - 36;
+    const pw = (x1 - x0 - gap) / 2;
+    G = {
+      y0, y1,
+      mp: { x0, x1: x0 + pw, vmax: 1.1 },        // |H|
+      pp: { x0: x1 - pw, x1, vmax: 1.05 },       // phase delay, in samples
+    };
+  }
+  layout(800, 300);   // placeholder until the canvas reports real dimensions
+
+  // H(e^{jω}) of each interpolator at the current f
+  function resp(kind, w) {
+    if (kind === 0) {                // linear: (1−f) + f·z⁻¹
+      return { re: 1 - f + f * Math.cos(w), im: -f * Math.sin(w) };
+    }
+    if (kind === 1) {                // lagrange 3: node m sits at delay m−1
+      let re = 0, im = 0;
+      for (let m = 0; m < 4; m++) {
+        const wt = lagW(f + 1, m);
+        re += wt * Math.cos((m - 1) * w);
+        im -= wt * Math.sin((m - 1) * w);
+      }
+      return { re, im };
+    }
+    const eta = (1 - f) / (1 + f);   // thiran 1: (η + z⁻¹) / (1 + η·z⁻¹)
+    const nr = eta + Math.cos(w), ni = -Math.sin(w);
+    const dr = 1 + eta * Math.cos(w), di = -eta * Math.sin(w);
+    const d = dr * dr + di * di;
+    return { re: (nr * dr + ni * di) / d, im: (ni * dr - nr * di) / d };
+  }
+
+  const KINDS = [
+    { name: "linear", color: MUT },
+    { name: "lagrange 3", color: ACC },
+    { name: "thiran 1", color: READC },
+  ];
+
+  function draw(ctx) {
+    const { mp, pp, y0, y1 } = G;
+    const xAt = (p, k) => p.x0 + k * (p.x1 - p.x0) / (K + 1);
+    const yAt = (p, v) => y1 - v * (y1 - y0) / p.vmax;
+
+    // panel titles: what each y-axis measures
+    ctx.font = "11px Menlo, Consolas, monospace";
+    ctx.fillStyle = MUT; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText("magnitude |H|", (mp.x0 + mp.x1) / 2, 6);
+    ctx.fillText("phase delay, in samples", (pp.x0 + pp.x1) / 2, 6);
+
+    // panel frames: baseline + the shared x-axis, input frequency 0 → nyquist
+    ctx.font = "10px Menlo, Consolas, monospace";
+    for (const p of [mp, pp]) {
+      ctx.strokeStyle = GRID; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(p.x0, y1); ctx.lineTo(p.x1, y1); ctx.stroke();
+      ctx.fillStyle = FAINT; ctx.textBaseline = "top";
+      ctx.textAlign = "left"; ctx.fillText("0", p.x0, y1 + 8);
+      ctx.textAlign = "right"; ctx.fillText("fs/2", p.x1, y1 + 8);
+      ctx.textAlign = "center"; ctx.fillText("input frequency", (p.x0 + p.x1) / 2, y1 + 8);
+    }
+
+    // guides: |H| = 1 on the left, the requested fractional delay on the right
+    ctx.strokeStyle = GRID; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(mp.x0, yAt(mp, 1)); ctx.lineTo(mp.x1, yAt(mp, 1));
+    ctx.stroke();
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(pp.x0, yAt(pp, f)); ctx.lineTo(pp.x1, yAt(pp, f));
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = FAINT; ctx.textBaseline = "middle";
+    ctx.textAlign = "right";
+    ctx.fillText("1", mp.x0 - 6, yAt(mp, 1));
+    ctx.fillText("target f", pp.x0 - 6, yAt(pp, f));
+
+    // legend, centered under the x-axis labels
+    ctx.font = "11px Menlo, Consolas, monospace";
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    const wOf = name => name.length * 6.6 + 18;
+    let lx = (mp.x0 + pp.x1) / 2 - (KINDS.reduce((s, k) => s + wOf(k.name), 0) - 18) / 2;
+    for (const { name, color } of KINDS) {
+      ctx.fillStyle = color;
+      ctx.fillText(name, lx, y1 + 22);
+      lx += wOf(name);
+    }
+
+    // the curves, straight from H(e^{jω})
+    for (let kind = 0; kind < 3; kind++) {
+      ctx.strokeStyle = KINDS[kind].color;
+      ctx.lineWidth = kind === 2 ? 2 : 1.6;
+      ctx.beginPath();
+      for (let k = 1; k <= K; k++) {
+        const h = resp(kind, k * Math.PI / (K + 1));
+        const x = xAt(mp, k), y = yAt(mp, Math.hypot(h.re, h.im));
+        k === 1 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      for (let k = 1; k <= K; k++) {
+        const w = k * Math.PI / (K + 1), h = resp(kind, w);
+        const pd = Math.min(pp.vmax, Math.max(0, -Math.atan2(h.im, h.re) / w));
+        const x = xAt(pp, k), y = yAt(pp, pd);
+        k === 1 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // same one-slider shape as the frac slides: match by shape, not id
+  const fEl = slide.querySelector("input[type=range]");
+  const fVal = slide.querySelector(".val");
+  fEl.addEventListener("input", () => {
+    f = parseFloat(fEl.value);
+    fVal.textContent = "f = " + f.toFixed(2) + " samples";
+  });
+
+  const cw = canvasWidget(slide.querySelector(".widget"),
+    { layout, tick: () => {}, draw });
+  return { activate: cw.activate, deactivate: cw.deactivate };
+}
+
+// ---- the sinc slide: the kernel itself --------------------------------------
+// A bare static plot of sinc(t) = sin(πt)/(πt). No controls, no annotations —
+// the figure exists to be pointed at while reading the bullets.
+
+function makeSincFigWidget(slide) {
+  const T = 8;                          // plotted range: t ∈ [−T, T]
+  const VLO = -0.35, VHI = 1.15;        // display range; sinc stays in [−0.22, 1]
+  let G = null;
+
+  const sincf = t => Math.abs(t) < 1e-9 ? 1 : Math.sin(Math.PI * t) / (Math.PI * t);
+
+  function layout(W, H) {
+    const x0 = 84, x1 = W - 64, y0 = 16, y1 = H - 30;
+    G = {
+      x0, x1, y0, y1,
+      xAt: t => x0 + (t + T) * (x1 - x0) / (2 * T),
+      yAt: v => y1 - (v - VLO) * (y1 - y0) / (VHI - VLO),
+    };
+  }
+  layout(800, 300);   // placeholder until the canvas reports real dimensions
+
+  function draw(ctx, W, H) {
+    const bY = G.yAt(0);
+
+    // integer grid: one faint vertical per integer, numbers along the bottom
+    ctx.strokeStyle = GRID; ctx.lineWidth = 1;
+    for (let k = -T; k <= T; k++) {
+      const x = G.xAt(k);
+      ctx.beginPath(); ctx.moveTo(x, G.y0); ctx.lineTo(x, G.y1); ctx.stroke();
+    }
+    ctx.fillStyle = INK; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.font = "bold 11px Menlo, Consolas, monospace";
+    for (let k = -T; k <= T; k++) {
+      ctx.fillText(String(k).replace("-", "−"), G.xAt(k), G.y1 + 6);
+    }
+
+    // the zero line, and a dashed line at height 1
+    ctx.strokeStyle = FAINT; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(G.x0 - 26, bY); ctx.lineTo(G.x1 + 26, bY); ctx.stroke();
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(G.x0 - 26, G.yAt(1)); ctx.lineTo(G.x1 + 26, G.yAt(1)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = MUT; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.font = "13px Menlo, Consolas, monospace";
+    ctx.fillText("1", G.x0 - 32, G.yAt(1));
+    ctx.fillText("0", G.x0 - 32, bY);
+
+    // sinc itself
+    ctx.strokeStyle = ACC; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let s = 0; s <= 800; s++) {
+      const t = -T + s * 2 * T / 800;
+      const x = G.xAt(t), y = G.yAt(sincf(t));
+      s === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  const cw = canvasWidget(slide.querySelector(".widget"), { layout, tick: () => {}, draw });
+  return { activate: cw.activate, deactivate: cw.deactivate };
+}
+
+// ---- the chorus slide: a copy drifting behind the original ------------------
+// The dry waveform and its delayed copy, overlaid. The copy's delay D breathes
+// with a slow sine, so the copy slides back and forth under the original —
+// and while it slides, its pitch sits slightly below or above the original's.
+
+function makeChorusWidget(slide) {
+  const TW = 28;                  // view width, in ms of signal
+  const BASE = 14;                // center delay, ms
+  const RATE = 0.15;              // sweep rate, Hz
+  let depth = 3;                  // sweep depth, ms (the slider)
+  let phase = reducedMotion ? 0.9 : 0;
+  let G = null;
+
+  // same deterministic test signal as the fractional-delay figures
+  const sig = t => 0.62 * Math.sin(0.9 * t) + 0.28 * Math.sin(1.7 * t + 1.1);
+
+  function layout(W, H) {
+    const x0 = 84, x1 = W - 64;
+    G = {
+      x0, x1,
+      baseY: Math.round(H * 0.56),
+      amp: Math.min(110, H * 0.3),
+      xAt: t => x0 + t * (x1 - x0) / TW,
+    };
+  }
+  layout(800, 300);   // placeholder until the canvas reports real dimensions
+
+  const yAt = v => G.baseY - v * G.amp;
+
+  function tick(dt) {
+    if (!reducedMotion) phase += 2 * Math.PI * RATE * dt / 1000;
+  }
+
+  function trace(ctx, shift) {
+    ctx.beginPath();
+    for (let s = 0; s <= 600; s++) {
+      const t = s * TW / 600;
+      const x = G.xAt(t), y = yAt(sig(t - shift));
+      s === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  function draw(ctx, W, H) {
+    const D = BASE + depth * Math.sin(phase);
+    const growing = Math.cos(phase) >= 0;
+
+    ctx.strokeStyle = GRID; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(G.x0 - 26, G.baseY); ctx.lineTo(G.x1 + 26, G.baseY); ctx.stroke();
+
+    ctx.strokeStyle = MUT; ctx.lineWidth = 1.4;
+    trace(ctx, 0);                       // the original
+    ctx.strokeStyle = ACC; ctx.lineWidth = 2;
+    trace(ctx, D);                       // the copy, D ms later
+
+    // legend + state readout
+    ctx.font = "13px Menlo, Consolas, monospace";
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillStyle = MUT; ctx.fillText("original", G.x0, 10);
+    ctx.fillStyle = ACC; ctx.fillText("delayed copy", G.x0 + 96, 10);
+    ctx.textAlign = "right";
+    ctx.fillStyle = INK; ctx.fillText(`D = ${D.toFixed(1)} ms`, G.x1, 10);
+    ctx.fillStyle = READC;
+    ctx.font = "11px Menlo, Consolas, monospace";
+  }
+
+  const cw = canvasWidget(slide.querySelector(".widget"), { layout, tick, draw });
+
+  const dEl = slide.querySelector("input[type=range]");
+  const dVal = slide.querySelector(".val");
+  dEl.addEventListener("input", () => {
+    depth = parseFloat(dEl.value);
+    dVal.textContent = depth.toFixed(1) + " ms";
+  });
+
+  return { activate: cw.activate, deactivate: cw.deactivate };
+}
+
+// ---- the flanger slide: the comb, swept -------------------------------------
+// Magnitude response of y[n] = x[n] + x[n−D] + g·y[n−D], drawn across 0…fs/2
+// while D breathes with a slow sine. Height is scaled so the peaks sit at 1;
+// what's left to watch is the shape: evenly spaced notches sweeping together,
+// and peaks that sharpen as the feedback g rises.
+
+function makeFlangerWidget(slide) {
+  const RATE = 0.08;              // sweep rate, Hz
+  let g = 0.5;                    // feedback (the slider)
+  let phase = reducedMotion ? 0.7 : 0;
+  let G = null;
+
+  function layout(W, H) {
+    const x0 = 84, x1 = W - 64, y0 = 16, y1 = H - 30;
+    G = {
+      x0, x1, y0, y1,
+      xAt: u => x0 + u * (x1 - x0),        // u ∈ [0,1] ↔ f ∈ [0, fs/2]
+      yAt: v => y1 - v * (y1 - y0 - 22),   // v ∈ [0,1]; 22px headroom for text
+    };
+  }
+  layout(800, 300);   // placeholder until the canvas reports real dimensions
+
+  function tick(dt) {
+    if (!reducedMotion) phase += 2 * Math.PI * RATE * dt / 1000;
+  }
+
+  function draw(ctx, W, H) {
+    const D = 11 + 5 * Math.sin(phase);    // delay in samples: 6 … 16
+
+    // axes: zero line, dashed line at the peak height 1
+    ctx.strokeStyle = FAINT; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(G.x0 - 26, G.yAt(0)); ctx.lineTo(G.x1 + 26, G.yAt(0)); ctx.stroke();
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(G.x0 - 26, G.yAt(1)); ctx.lineTo(G.x1 + 26, G.yAt(1)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = MUT; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.font = "13px Menlo, Consolas, monospace";
+    ctx.fillText("1", G.x0 - 32, G.yAt(1));
+    ctx.fillText("0", G.x0 - 32, G.yAt(0));
+
+    // frequency axis ends
+    ctx.fillStyle = INK; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.font = "bold 11px Menlo, Consolas, monospace";
+    ctx.fillText("0", G.xAt(0), G.y1 + 6);
+    ctx.fillText("fs/2", G.xAt(1), G.y1 + 6);
+
+    // |H| = |1 + e^(−jωD)| / |1 − g·e^(−jωD)|, scaled by (1−g)/2 → peaks at 1
+    ctx.strokeStyle = ACC; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let k = 0; k <= 700; k++) {
+      const w = k * Math.PI / 700;
+      const num = 2 * Math.abs(Math.cos(w * D / 2));
+      const den = Math.sqrt(1 + g * g - 2 * g * Math.cos(w * D));
+      const v = num * (1 - g) / (2 * den);
+      const x = G.xAt(k / 700), y = G.yAt(v);
+      k === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // state readout
+    ctx.fillStyle = INK; ctx.textAlign = "right"; ctx.textBaseline = "top";
+    ctx.font = "13px Menlo, Consolas, monospace";
+    ctx.fillText(`D = ${D.toFixed(1)} samples`, G.x1, G.y0);
+  }
+
+  const cw = canvasWidget(slide.querySelector(".widget"), { layout, tick, draw });
+
+  const gEl = slide.querySelector("input[type=range]");
+  const gVal = slide.querySelector(".val");
+  gEl.addEventListener("input", () => {
+    g = parseFloat(gEl.value);
+    gVal.textContent = "g = " + g.toFixed(2);
+  });
+
+  return { activate: cw.activate, deactivate: cw.deactivate };
+}
+
+// ---- the karplus-strong slide: the loop, drawn as a block diagram -----------
+// The classic picture: input into a summing node, through the delay line
+// z^{−D}, out to the output — with the output fed back through the gentle
+// lowpass H(z) into the sum. The pluck button renders the real algorithm at
+// audio rate (220 Hz) into a WebAudio buffer and plays it; the decay slider
+// sets the g used for the sound.
+
+function makeKSWidget(slide) {
+  let g = 0.99;                    // per-trip decay (the slider)
+  let G = null;
+
+  function layout(W, H) {
+    const x0 = 84, x1 = W - 64;
+    G = { x0, x1, yTop: Math.round(H * 0.30), yBot: Math.round(H * 0.76) };
+  }
+  layout(800, 300);   // placeholder until the canvas reports real dimensions
+
+  function draw(ctx, W, H) {
+    const { x0, x1, yTop, yBot } = G;
+    const xS = x0 + 88, r = 14;                    // summing node
+    const xdL = xS + 54, xdR = x1 - 170, bh = 56;  // the delay box
+    const xT = x1 - 36;                            // feedback tap on the output line
+    const fW = 170, fH = 50, fCx = (xS + xT) / 2;  // the filter box
+    const fL = fCx - fW / 2, fR = fCx + fW / 2;
+
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.6; ctx.lineJoin = "round";
+
+    // forward path: in → (+) → delay → out
+    ctx.beginPath();
+    ctx.moveTo(x0 - 20, yTop); ctx.lineTo(xS - r, yTop);
+    ctx.moveTo(xS + r, yTop); ctx.lineTo(xdL, yTop);
+    ctx.moveTo(xdR, yTop); ctx.lineTo(x1 + 20, yTop);
+    ctx.stroke();
+
+    // feedback path: tap after the delay, down, through the filter, back up
+    ctx.beginPath();
+    ctx.moveTo(xT, yTop); ctx.lineTo(xT, yBot); ctx.lineTo(fR, yBot);
+    ctx.moveTo(fL, yBot); ctx.lineTo(xS, yBot); ctx.lineTo(xS, yTop + r);
+    ctx.stroke();
+
+    arrowHead(ctx, xS - r, yTop, 1, 0, 7, INK, 1);    // into the sum
+    arrowHead(ctx, xdL, yTop, 1, 0, 7, INK, 1);       // into the delay
+    arrowHead(ctx, x1 + 20, yTop, 1, 0, 7, INK, 1);   // the output
+    arrowHead(ctx, fR, yBot, -1, 0, 7, INK, 1);       // into the filter
+    arrowHead(ctx, xS, yTop + r, 0, -1, 7, INK, 1);   // back into the sum
+
+    // the tap where the feedback branches off the output line
+    ctx.fillStyle = INK;
+    ctx.beginPath(); ctx.arc(xT, yTop, 3, 0, Math.PI * 2); ctx.fill();
+
+    // summing node
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.arc(xS, yTop, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(xS - r * 0.55, yTop); ctx.lineTo(xS + r * 0.55, yTop);
+    ctx.moveTo(xS, yTop - r * 0.55); ctx.lineTo(xS, yTop + r * 0.55);
+    ctx.stroke();
+
+    // the delay box, labeled z^{−D}
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(xdL, yTop - bh / 2, xdR - xdL, bh);
+    ctx.strokeRect(xdL + 0.5, yTop - bh / 2 + 0.5, xdR - xdL - 1, bh - 1);
+    const cx = (xdL + xdR) / 2;
+    ctx.fillStyle = INK; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.font = "20px Menlo, Consolas, monospace";
+    const zw = ctx.measureText("z").width;
+    ctx.font = "12px Menlo, Consolas, monospace";
+    const ew = ctx.measureText("−D").width;
+    const zx = cx - (zw + 2 + ew) / 2;
+    ctx.font = "20px Menlo, Consolas, monospace";
+    ctx.fillText("z", zx, yTop + 2);
+    ctx.font = "12px Menlo, Consolas, monospace";
+    ctx.fillText("−D", zx + zw + 2, yTop - 8);
+    ctx.font = "11px Menlo, Consolas, monospace";
+    ctx.fillStyle = MUT; ctx.textAlign = "center"; ctx.textBaseline = "top";
+
+    // the filter box, labeled H(z)
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(fL, yBot - fH / 2, fW, fH);
+    ctx.strokeRect(fL + 0.5, yBot - fH / 2 + 0.5, fW - 1, fH - 1);
+    ctx.fillStyle = INK; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "16px Menlo, Consolas, monospace";
+    ctx.fillText("H(z)", fCx, yBot + 1);
+    ctx.font = "11px Menlo, Consolas, monospace";
+    ctx.fillStyle = MUT; ctx.textBaseline = "bottom";
+
+    // signal labels
+    label(ctx, "x[n]", x0 - 20, yTop - 26);
+    label(ctx, "y[n]", x1 + 20, yTop - 26, INK, "right");
+  }
+
+  // audio: render one pluck of the same algorithm at audio rate, then play it
+  let actx = null, lastSrc = null;
+  function playPluck() {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    const sr = actx.sampleRate;
+    const D = Math.round(sr / 220);              // A at 220 Hz
+    const len = Math.round(sr * 2.5);
+    const ab = actx.createBuffer(1, len, sr);
+    const data = ab.getChannelData(0);
+    for (let n = 0; n < D; n++) data[n] = (Math.random() * 2 - 1) * 0.9;
+    data[D] = g * 0.5 * data[0];
+    for (let n = D + 1; n < len; n++) data[n] = g * 0.5 * (data[n - D] + data[n - D - 1]);
+    if (lastSrc) { try { lastSrc.stop(); } catch (e) {} }
+    const src = actx.createBufferSource();
+    src.buffer = ab;
+    src.connect(actx.destination);
+    // a suspended context plays nothing: wait for resume() before starting
+    if (actx.state === "suspended") actx.resume().then(() => src.start());
+    else src.start();
+    lastSrc = src;
+  }
+
+  const cw = canvasWidget(slide.querySelector(".widget"), { layout, tick: () => {}, draw });
+
+  slide.querySelector("#ks-pluck").addEventListener("click", playPluck);
+  const gEl = slide.querySelector("input[type=range]");
+  const gVal = slide.querySelector(".val");
+  gEl.addEventListener("input", () => {
+    g = parseFloat(gEl.value);
+    gVal.textContent = "g = " + g.toFixed(3);
+  });
+
+  return {
+    activate: cw.activate,
+    deactivate() {
+      cw.deactivate();
+      if (lastSrc) { try { lastSrc.stop(); } catch (e) {} lastSrc = null; }
+    },
+  };
+}
+
+// ---- the slide engine -------------------------------------------------------
+
+const WIDGETS = {
+  queue: makeQueueWidget, ring: makeRingWidget, fffb: makeFFFBWidget,
+  frac: el => makeFracWidget(el), lerp: el => makeFracWidget(el, "lerp"),
+  lagrange: el => makeFracWidget(el, "lagrange"), interp: makeInterpWidget,
+  // sinc used to be makeFracWidget(el, "sinc"), the sliding-reconstruction
+  // figure; that mode still exists in makeFracWidget if it's ever wanted back
+  thiran: makeThiranWidget, sinc: makeSincFigWidget,
+  chorus: makeChorusWidget, flanger: makeFlangerWidget, ks: makeKSWidget,
+};
+
+// fragments: [data-step] elements reveal in groups on advance. bare data-step
+// auto-numbers in document order; explicit data-step="n" joins group n, so
+// several elements can appear together.
+function buildFrags(el) {
+  const groups = new Map();
+  let auto = 0;
+  for (const f of el.querySelectorAll("[data-step]")) {
+    const v = f.getAttribute("data-step");
+    const n = v ? parseInt(v, 10) : auto + 1;
+    auto = Math.max(auto, n);
+    f.classList.add("frag");
+    if (!groups.has(n)) groups.set(n, []);
+    groups.get(n).push(f);
+  }
+  return [...groups.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]);
+}
+
+const slides = [...document.querySelectorAll(".slide")].map(el => ({
+  el,
+  inst: el.dataset.widget ? WIDGETS[el.dataset.widget](el) : null,
+  frags: buildFrags(el),
+  stage: 0,
+}));
+let cur = -1;
+const pos = document.getElementById("pos");
+
+function setStage(sl, s) {
+  sl.stage = Math.max(0, Math.min(sl.frags.length, s));
+  sl.frags.forEach((g, i) => g.forEach(el => el.classList.toggle("on", i < sl.stage)));
+  if (sl.inst && sl.inst.onStage) sl.inst.onStage(sl.stage, sl.frags.length);
+}
+
+function goTo(i, revealEnd = false) {
+  i = Math.max(0, Math.min(slides.length - 1, i));
+  if (i === cur) return;
+  if (cur >= 0) {
+    if (slides[cur].inst) slides[cur].inst.deactivate();
+    slides[cur].el.classList.remove("active");
+  }
+  cur = i;
+  setStage(slides[cur], revealEnd ? slides[cur].frags.length : 0);
+  slides[cur].el.classList.add("active");
+  if (slides[cur].inst) slides[cur].inst.activate();
+  pos.textContent = (cur + 1) + " / " + slides.length;
+  const h = "#" + (cur + 1);
+  if (location.hash !== h) {
+    try { history.replaceState(null, "", h); }
+    catch (_) { location.hash = h; }
+  }
+}
+
+// forward = next fragment, then next slide; backward = previous fragment, then
+// previous slide fully revealed, so stepping in reverse retraces the reveals
+function advance() {
+  const sl = slides[cur];
+  if (sl.stage < sl.frags.length) setStage(sl, sl.stage + 1);
+  else goTo(cur + 1);
+}
+function retreat() {
+  const sl = slides[cur];
+  if (sl.stage > 0) setStage(sl, sl.stage - 1);
+  else goTo(cur - 1, true);
+}
+
+document.getElementById("prev").addEventListener("click", retreat);
+document.getElementById("next").addEventListener("click", advance);
+window.addEventListener("hashchange", () => goTo((parseInt(location.hash.slice(1), 10) || 1) - 1));
+
+window.addEventListener("keydown", e => {
+  if (/^(INPUT|BUTTON|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if (e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); advance(); return; }
+  if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); retreat(); return; }
+  if (e.key === "Home") { e.preventDefault(); goTo(0); return; }
+  if (e.key === "End") { e.preventDefault(); goTo(slides.length - 1); return; }
+  const d = "123456789".indexOf(e.key);
+  if (d >= 0 && d < slides.length) { goTo(d); return; }
+  if (slides[cur].inst && slides[cur].inst.onKey) slides[cur].inst.onKey(e);
+});
+
+goTo((parseInt(location.hash.slice(1), 10) || 1) - 1);
+</script>
+</body>
+</html>
